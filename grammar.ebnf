@@ -1,0 +1,45 @@
+program = BEGIN statement* END
+        ;
+
+statement = print-statement
+          | read-statement
+          | if-statement
+          | loop-statement
+          | break-statement
+          | assign-statement
+          ;
+
+print-statement = PRINT expression
+                ;
+
+read-statement = READ IDENTIFIER
+               ;
+
+if-statement = ifkw expression statement* [ ELSE statement* ] END
+             ;
+
+ifkw = IFN
+     | IFP
+     | IFZ
+     ;
+
+loop-statement = LOOP statement* END
+               ;
+
+break-statement = BREAK
+                ;
+
+assign-statement = IDENTIFIER '=' expression
+                 ;
+
+expression = factor { [+|-] factor }
+           ;
+
+factor = term { [*|/|%] term }
+       ;
+
+term = IDENTIFIER
+     | NUMBER
+     | [+|-] term
+     | '(' expression ')'
+     ;
