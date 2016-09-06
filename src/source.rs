@@ -4,6 +4,8 @@ use std::path::Path;
 use std::fs::File;
 use std::str;
 
+use diagnostic::DiagnosticEngine;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
     pub begin: usize,
@@ -30,16 +32,22 @@ impl Span {
     }
 }
 
-pub struct SourceManager {
+pub fn write_to_file<P: AsRef<Path>>(path: P, content: String) -> io::Result<()> {
+    let mut file = try!(File::create(path));
+    write!(file, "{}", content)
+}
+
+#[derive(Debug, Clone)]
+pub struct Manager {
     pub source: String
 }
 
-impl SourceManager {
-    pub fn new<P: AsRef<Path>>(path: P) -> io::Result<SourceManager> {
+impl Manager {
+    pub fn new<P: AsRef<Path>>(path: P) -> io::Result<Manager> {
         let mut file = try!(File::open(path));
         let mut raw_input = String::new();
         try!(file.read_to_string(&mut raw_input));
-        Ok(SourceManager {
+        Ok(Manager {
             source: raw_input
         })
     }
@@ -50,8 +58,15 @@ impl SourceManager {
             commenting: false
         }
     }
+
+    pub fn diagnostic_engine<'a>(&'a self) -> DiagnosticEngine<'a> {
+        DiagnosticEngine {
+            source: &self.source
+        }
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct Reader<'a> {
     iter: str::CharIndices<'a>,
     commenting: bool

@@ -1,16 +1,16 @@
 use std::env;
 
-mod reader;
+mod source;
 mod token;
 mod lexer;
 mod ast;
 mod parser;
-mod vm;
+mod diagnostic;
+mod ir;
 
-use reader::SourceManager;
+use source::Manager;
 use lexer::Lexer;
 use parser::Parser;
-use ast::Visitor;
 
 fn usage(prog_path: &str) {
     println!("Bitsy compiler");
@@ -24,15 +24,22 @@ fn main() {
         Some(path) => path,
         None => { usage(&prog_path); return }
     };
+    let output_path = args.next().unwrap_or(String::from("a.c"));
 
-    let source_manager = SourceManager::new(file_path).unwrap();
+    let source_manager = Manager::new(file_path).unwrap();
     let source_reader = source_manager.reader();
-    let lexer = Lexer::new(source_reader);
+    let diagnostic_engine = source_manager.diagnostic_engine();
+
+    let lexer = Lexer::new(source_reader, &diagnostic_engine);
     let mut parser = Parser::new(lexer);
-    let program = parser.parse_program().unwrap();
-    println!("{:#?}", program);
-    let mut builder = vm::Builder::new();
-    builder.visit_program(&program);
-    //println!("{:?}", builder.opcodes);
-    vm::run(builder.opcodes);
+
+    let program = match parser.parse_program() {
+        Ok(program) => program,
+        Err(parser_error) => diagnostic_engine.report_parse_error(parser_error)
+    };
+
+    let blocks = ir::generate(&program);
+    for block in blocks {
+        println!("{}", block);
+    }
 }

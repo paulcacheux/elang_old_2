@@ -3,7 +3,8 @@ use std::str::FromStr;
 
 use ast::IfKind;
 use token::Token;
-use reader::Span;
+use source::Span;
+use diagnostic::DiagnosticEngine;
 
 fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     let span = Span::new_with_len(bytepos, raw.len());
@@ -30,14 +31,16 @@ fn is_identifier_char(c: char) -> bool {
     }
 }
 
-pub struct Lexer<R: Iterator<Item=(usize, char)>> {
-    input: Peekable<R>
+pub struct Lexer<'a, R: Iterator<Item=(usize, char)>> {
+    input: Peekable<R>,
+    diagnostic: &'a DiagnosticEngine<'a>
 }
 
-impl<R: Iterator<Item=(usize, char)>> Lexer<R> {
-    pub fn new(input: R) -> Lexer<R> {
+impl<'a, R: Iterator<Item=(usize, char)>> Lexer<'a, R> {
+    pub fn new(input: R, diag: &'a DiagnosticEngine<'a>) -> Lexer<'a, R> {
         Lexer {
-            input: input.peekable()
+            input: input.peekable(),
+            diagnostic: diag
         }
     }
 
@@ -67,7 +70,7 @@ impl<R: Iterator<Item=(usize, char)>> Lexer<R> {
     }
 }
 
-impl<R: Iterator<Item=(usize, char)>> Iterator for Lexer<R> {
+impl<'a, R: Iterator<Item=(usize, char)>> Iterator for Lexer<'a, R> {
     type Item = (Span, Token);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -90,7 +93,7 @@ impl<R: Iterator<Item=(usize, char)>> Iterator for Lexer<R> {
                 '*' => (Span::new_with_len(bytepos, 1), Token::TimesOp),
                 '/' => (Span::new_with_len(bytepos, 1), Token::DivideOp),
                 '%' => (Span::new_with_len(bytepos, 1), Token::ModOp),
-                _ => panic!("Unknown character")
+                c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos)
             })
         } else {
             None

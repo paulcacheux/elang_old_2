@@ -55,9 +55,9 @@ impl Builder {
             self.opcodes[b] = OpCode::Jmp(break_target);
         }
     }
-}
 
-impl ast::Visitor for Builder {
+
+    // start visitor
     fn visit_program(&mut self, program: &Program) {
         for stmt in &program.stmts {
             self.visit_statement(stmt);

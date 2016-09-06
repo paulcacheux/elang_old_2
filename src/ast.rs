@@ -1,10 +1,4 @@
-use reader::Span;
-
-pub trait Visitor {
-    fn visit_program(&mut self, program: &Program);
-    fn visit_statement(&mut self, statement: &Statement);
-    fn visit_expression(&mut self, expression: &Expression);
-}
+use source::Span;
 
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -54,9 +48,9 @@ pub enum Statement { //TODO: span is a bit repetitive
 pub enum BinOpKind {
     Add,
     Sub,
-    Times,
-    Divide,
-    Modulo
+    Mul,
+    Div,
+    Mod
 }
 
 impl BinOpKind {
@@ -64,24 +58,24 @@ impl BinOpKind {
         match self {
             BinOpKind::Add => a + b,
             BinOpKind::Sub => a - b,
-            BinOpKind::Times => a * b,
-            BinOpKind::Divide => a / b,
-            BinOpKind::Modulo => a % b
+            BinOpKind::Mul => a * b,
+            BinOpKind::Div => a / b,
+            BinOpKind::Mod => a % b
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOpKind {
-    Positive,
-    Negative
+    Plus,
+    Minus
 }
 
 impl UnOpKind {
     pub fn apply(self, val: i64) -> i64 {
         match self {
-            UnOpKind::Positive => val, // noop
-            UnOpKind::Negative => -val
+            UnOpKind::Plus => val, // noop
+            UnOpKind::Minus => -val
         }
     }
 }
