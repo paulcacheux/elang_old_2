@@ -47,14 +47,14 @@ impl Manager {
         Ok(Manager { source: raw_input })
     }
 
-    pub fn reader<'a>(&'a self) -> Reader<'a> {
+    pub fn reader(&self) -> Reader {
         Reader {
             iter: self.source.char_indices(),
             commenting: false,
         }
     }
 
-    pub fn diagnostic_engine<'a>(&'a self) -> DiagnosticEngine<'a> {
+    pub fn diagnostic_engine(&self) -> DiagnosticEngine {
         DiagnosticEngine { source: &self.source }
     }
 }

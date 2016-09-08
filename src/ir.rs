@@ -265,7 +265,7 @@ impl Builder {
                     branch: Branch::Jmp(self.peek_label()),
                 });
 
-                if let &Some(ref else_stmts) = else_stmts {
+                if let Some(ref else_stmts) = *else_stmts {
                     for stmt in else_stmts {
                         blocks.extend(self.generate_statement(stmt));
                     }

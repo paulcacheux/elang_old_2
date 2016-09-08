@@ -80,7 +80,7 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
         if let Some((bytepos, c)) = self.input.next() {
             Some(match c {
                 c if is_identifier_char(c) => {
-                    identifier_or_keyword(self.take_while(c, |c| is_identifier_char(c)), bytepos)
+                    identifier_or_keyword(self.take_while(c, is_identifier_char), bytepos)
                 }
                 c if c.is_digit(10) => {
                     let number = self.take_while(c, |c| c.is_digit(10));

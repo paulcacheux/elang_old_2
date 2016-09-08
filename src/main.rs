@@ -23,7 +23,8 @@ fn usage(prog_path: &str) {
 
 fn main() {
     let mut args = env::args();
-    let prog_path = args.next().unwrap_or(String::from("./bitsy"));
+    let default_prog_path = String::from("./bitsy");
+    let prog_path = args.next().unwrap_or(default_prog_path);
     let file_path = match args.next() {
         Some(path) => path,
         None => {
@@ -31,7 +32,8 @@ fn main() {
             return;
         }
     };
-    let output_path = args.next().unwrap_or(String::from("a.c"));
+    let default_output_path = String::from("a.c");
+    let output_path = args.next().unwrap_or(default_output_path);
 
     let source_manager = Manager::new(file_path).unwrap();
     let source_reader = source_manager.reader();

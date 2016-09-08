@@ -15,11 +15,11 @@ pub fn optimize(func: &mut Function) {
 pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
     let mut directions: HashMap<String, String> = HashMap::new();
     for block in blocks.iter() {
-        if block.instructions.len() == 0 {
+        if block.instructions.is_empty() {
             if let Branch::Jmp(ref new_dest) = block.branch {
                 let real_dest = directions.get(new_dest).cloned().unwrap_or(new_dest.clone());
                 directions.insert(block.name.clone(), real_dest.clone());
-                for (_, dest) in directions.iter_mut() {
+                for (_, dest) in &mut directions {
                     if *dest == block.name {
                         *dest = real_dest.clone();
                     }
@@ -51,7 +51,7 @@ pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
 }
 
 pub fn simplify_jumps(blocks: &mut Vec<BasicBlock>) {
-    for block in blocks.iter_mut() {
+    for block in blocks {
         let new_branch = match block.branch {
             Branch::JmpP(_, ref dest1, ref dest2) |
             Branch::JmpN(_, ref dest1, ref dest2) |
@@ -69,7 +69,7 @@ pub fn remove_unreachable_blocks(blocks: &mut Vec<BasicBlock>) {
     let first_block_label = blocks.first().unwrap().name.clone();
 
     let reachable_blocks = reachable_blocks(first_block_label, &map_blocks);
-    blocks.retain(|ref block| reachable_blocks.contains(&block.name));
+    blocks.retain(|block| reachable_blocks.contains(&block.name));
 }
 
 fn reachable_blocks(first_block: String, blocks: &HashMap<String, BasicBlock>) -> HashSet<String> {
@@ -99,9 +99,9 @@ fn can_reach(branch: &Branch) -> Vec<String> {
 pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
     for block in blocks.iter_mut() {
         let mut mapping: HashMap<String, Value> = HashMap::new();
-        for instruction in block.instructions.iter_mut() {
+        for instruction in &mut block.instructions {
             match *instruction {
-                Instruction::Assign(_, ref mut value) => change_value(value, &mapping),
+
                 Instruction::Add(_, ref mut lhs, ref mut rhs) |
                 Instruction::Sub(_, ref mut lhs, ref mut rhs) |
                 Instruction::Mul(_, ref mut lhs, ref mut rhs) |
@@ -110,6 +110,7 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
                     change_value(lhs, &mapping);
                     change_value(rhs, &mapping);
                 }
+                Instruction::Assign(_, ref mut value) |
                 Instruction::Negate(_, ref mut value) |
                 Instruction::Print(ref mut value) => change_value(value, &mapping),
                 Instruction::Read(_) => {}
@@ -141,10 +142,9 @@ fn change_value(value: &mut Value, mapping: &HashMap<String, Value>) {
 pub fn remove_unused_vars(func: &mut Function) {
     let mut read_vars: HashSet<String> = HashSet::new();
 
-    for block in func.blocks.iter_mut() {
-        for instruction in block.instructions.iter_mut() {
+    for block in &mut func.blocks {
+        for instruction in &mut block.instructions {
             match *instruction {
-                Instruction::Assign(_, ref mut value) => add_read_name(value, &mut read_vars),
                 Instruction::Add(_, ref mut lhs, ref mut rhs) |
                 Instruction::Sub(_, ref mut lhs, ref mut rhs) |
                 Instruction::Mul(_, ref mut lhs, ref mut rhs) |
@@ -153,6 +153,7 @@ pub fn remove_unused_vars(func: &mut Function) {
                     add_read_name(lhs, &mut read_vars);
                     add_read_name(rhs, &mut read_vars);
                 }
+                Instruction::Assign(_, ref mut value) |
                 Instruction::Negate(_, ref mut value) |
                 Instruction::Print(ref mut value) => add_read_name(value, &mut read_vars),
                 Instruction::Read(_) => {}
@@ -166,7 +167,7 @@ pub fn remove_unused_vars(func: &mut Function) {
         }
     }
 
-    for block in func.blocks.iter_mut() {
+    for block in &mut func.blocks {
         block.instructions.retain(|&ref instruction| {
             match *instruction {
                 Instruction::Assign(ref dest, _) |
@@ -192,7 +193,7 @@ fn add_read_name(value: &Value, read_vars: &mut HashSet<String>) {
 
 pub fn fold_constants(blocks: &mut Vec<BasicBlock>) {
     for block in blocks.iter_mut() {
-        for instruction in block.instructions.iter_mut() {
+        for instruction in &mut block.instructions {
             *instruction = match instruction.clone() {
                 Instruction::Add(dest, Value::Const(a), Value::Const(b)) => {
                     Instruction::Assign(dest, Value::Const(a + b))

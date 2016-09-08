@@ -70,10 +70,10 @@ pub enum Expression {
 impl Expression {
     pub fn span(&self) -> Span {
         match *self {
-            Expression::BinOp { span, .. } => span,
-            Expression::UnOp { span, .. } => span,
-            Expression::Paren { span, .. } => span,
-            Expression::Identifier { span, .. } => span,
+            Expression::BinOp { span, .. } |
+            Expression::UnOp { span, .. } |
+            Expression::Paren { span, .. } |
+            Expression::Identifier { span, .. } |
             Expression::Number { span, .. } => span,
         }
     }

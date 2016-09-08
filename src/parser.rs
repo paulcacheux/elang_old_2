@@ -17,7 +17,7 @@ macro_rules! expect { // we return the span for propagation
     ($lexer:expr, $p:pat, $expected:tt) => {
         match $lexer.next() {
             Some((span, $p)) => span,
-            other => return_unexpected!($expected, other)
+            other => return make_unexpected!($expected, other)
         }
     };
 }
@@ -33,9 +33,9 @@ macro_rules! match_peek_token {
     }
 }
 
-macro_rules! return_unexpected {
+macro_rules! make_unexpected {
     ($expected:tt, $other:expr) => {
-        return Err(ParseError::Unexpected($expected.to_string(), $other.map(|(span, _)| span)))
+        Err(ParseError::Unexpected($expected.to_string(), $other.map(|(span, _)| span)))
     }
 }
 
@@ -77,9 +77,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             Some((_, Token::LoopKw)) => self.parse_loop_statement(),
             Some((_, Token::BreakKw)) => self.parse_break_statement(),
             Some((_, Token::Identifier(_))) => self.parse_assign_statement(),
-            other => {
-                return_unexpected!("PRINT, READ, IFN, IFP, IFZ, LOOP, BREAK, identifier", other)
-            }
+            other => make_unexpected!("PRINT, READ, IFN, IFP, IFZ, LOOP, BREAK, identifier", other),
         }
     }
 
@@ -101,7 +99,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let kw_span = expect!(self.lexer, Token::ReadKw, "READ");
         let (span, id) = match self.lexer.next() {
             Some((span, Token::Identifier(id))) => (span, id),
-            other => return_unexpected!("identifier", other),
+            other => return make_unexpected!("identifier", other),
         };
         Ok(Statement::Read {
             target_id: id,
@@ -114,7 +112,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let (kw_span, if_kind) = match self.lexer.next() {
             Some((span, Token::IfKw(kind))) => (span, kind),
-            other => return_unexpected!("IFN, IFP or IFZ", other),
+            other => return make_unexpected!("IFN, IFP or IFZ", other),
         };
 
         let condition = try!(self.parse_expression());
@@ -172,7 +170,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let (id_span, id) = match self.lexer.next() {
             Some((span, Token::Identifier(id))) => (span, id),
-            other => return_unexpected!("identifier", other),
+            other => return make_unexpected!("identifier", other),
         };
         expect!(self.lexer, Token::AssignOp, "=");
         let value = try!(self.parse_expression());
@@ -278,7 +276,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
                     span: span,
                 }
             }
-            other => return_unexpected!("identifier, number, (, +, -", other),
+            other => return make_unexpected!("identifier, number, (, +, -", other),
         };
         Ok(term)
     }

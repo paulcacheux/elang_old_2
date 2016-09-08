@@ -21,7 +21,8 @@ impl<'a> DiagnosticEngine<'a> {
     pub fn report_parse_error(&self, error: ParseError) -> ! {
         let (description, span) = match error {
             ParseError::Unexpected(desc, span) => {
-                (desc, span.unwrap_or(Span::new_with_len(self.source.len() - 1, 1)))
+                let end_span = Span::new_with_len(self.source.len() - 1, 1);
+                (desc, span.unwrap_or(end_span))
             }
         };
 

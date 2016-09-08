@@ -78,7 +78,7 @@ fn generate_instruction(instruction: &Instruction) -> String {
 fn generate_value(value: &Value) -> String {
     match *value {
         Value::Const(value) => format!("{}l", value),
-        Value::Var(ref name) => format!("{}", name),
+        Value::Var(ref name) => name.clone(),
     }
 }
 
@@ -103,6 +103,6 @@ fn generate_branch(branch: &Branch) -> String {
                     true_label,
                     false_label)
         }
-        Branch::Ret => format!("\treturn 0;\n"),
+        Branch::Ret => String::from("\treturn 0;\n"),
     }
 }
