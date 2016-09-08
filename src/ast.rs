@@ -43,31 +43,10 @@ pub enum BinOpKind {
     Mod,
 }
 
-impl BinOpKind {
-    pub fn apply(self, a: i64, b: i64) -> i64 {
-        match self {
-            BinOpKind::Add => a + b,
-            BinOpKind::Sub => a - b,
-            BinOpKind::Mul => a * b,
-            BinOpKind::Div => a / b,
-            BinOpKind::Mod => a % b,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOpKind {
     Plus,
     Minus,
-}
-
-impl UnOpKind {
-    pub fn apply(self, val: i64) -> i64 {
-        match self {
-            UnOpKind::Plus => val, // noop
-            UnOpKind::Minus => -val,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

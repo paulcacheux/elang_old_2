@@ -2,7 +2,6 @@ use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt;
 
-use ast;
 use ast::{Program, IfKind, Statement, Expression, BinOpKind, UnOpKind};
 
 // TODO: Delete all the clones (Maybe Cow<str> ??)
@@ -45,9 +44,9 @@ impl fmt::Display for BasicBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Branch {
     Jmp(String),
-    JmpP(String, String, String),
-    JmpZ(String, String, String),
-    JmpN(String, String, String),
+    JmpP(Value, String, String),
+    JmpZ(Value, String, String),
+    JmpN(Value, String, String),
     Ret,
 }
 
@@ -70,23 +69,36 @@ impl fmt::Display for Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Value {
+    Const(i64),
+    Var(String),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Value::Const(value) => write!(f, "{}", value),
+            Value::Var(ref name) => write!(f, "{}", name),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
-    SetConst(String, i64),
-    Assign(String, String),
-    Add(String, String, String), // target = a + b
-    Sub(String, String, String),
-    Mul(String, String, String),
-    Div(String, String, String),
-    Mod(String, String, String),
-    Negate(String, String),
-    Print(String),
+    Assign(String, Value),
+    Add(String, Value, Value), // target = a + b
+    Sub(String, Value, Value),
+    Mul(String, Value, Value),
+    Div(String, Value, Value),
+    Mod(String, Value, Value),
+    Negate(String, Value),
+    Print(Value),
     Read(String),
 }
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Instruction::SetConst(ref dest, value) => write!(f, "{} = {}", dest, value),
             Instruction::Assign(ref dest, ref src) => write!(f, "{} = {}", dest, src),
             Instruction::Add(ref dest, ref lhs, ref rhs) => {
                 write!(f, "{} = add {} {}", dest, lhs, rhs)
@@ -112,7 +124,6 @@ impl fmt::Display for Instruction {
 
 pub fn generate(program: &Program) -> Function {
     let mut builder = Builder::new();
-    let first_real_label = builder.peek_label();
     let content_blocks = builder.generate_program(program);
 
     Function {
@@ -178,7 +189,7 @@ impl Builder {
             Statement::Print { ref expr, .. } => {
                 let expr_name = self.new_temp();
                 let mut instructions = self.generate_expression(expr, expr_name.clone());
-                instructions.push(Instruction::Print(expr_name));
+                instructions.push(Instruction::Print(Value::Var(expr_name)));
 
                 vec![BasicBlock {
                          name: self.new_label(),
@@ -204,13 +215,19 @@ impl Builder {
 
                 let cond_branch = match kind {
                     IfKind::Positive => {
-                        Branch::JmpP(cond_name.clone(), true_label.clone(), false_label.clone())
+                        Branch::JmpP(Value::Var(cond_name.clone()),
+                                     true_label.clone(),
+                                     false_label.clone())
                     }
                     IfKind::Negative => {
-                        Branch::JmpN(cond_name.clone(), true_label.clone(), false_label.clone())
+                        Branch::JmpN(Value::Var(cond_name.clone()),
+                                     true_label.clone(),
+                                     false_label.clone())
                     }
                     IfKind::Zero => {
-                        Branch::JmpZ(cond_name.clone(), true_label.clone(), false_label.clone())
+                        Branch::JmpZ(Value::Var(cond_name.clone()),
+                                     true_label.clone(),
+                                     false_label.clone())
                     }
                 };
 
@@ -308,7 +325,7 @@ impl Builder {
             Statement::Assign { ref target_id, ref value, .. } => {
                 let value_name = self.new_temp();
                 let mut instructions = self.generate_expression(value, value_name.clone());
-                instructions.push(Instruction::Assign(target_id.clone(), value_name));
+                instructions.push(Instruction::Assign(target_id.clone(), Value::Var(value_name)));
 
                 vec![BasicBlock {
                          name: self.new_label(),
@@ -327,11 +344,21 @@ impl Builder {
                 let mut instructions = self.generate_expression(lhs, lhs_name.clone());
                 instructions.extend(self.generate_expression(rhs, rhs_name.clone()));
                 instructions.push(match kind {
-                    BinOpKind::Add => Instruction::Add(name, lhs_name, rhs_name),
-                    BinOpKind::Sub => Instruction::Sub(name, lhs_name, rhs_name),
-                    BinOpKind::Mul => Instruction::Mul(name, lhs_name, rhs_name),
-                    BinOpKind::Div => Instruction::Div(name, lhs_name, rhs_name),
-                    BinOpKind::Mod => Instruction::Mod(name, lhs_name, rhs_name),
+                    BinOpKind::Add => {
+                        Instruction::Add(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::Sub => {
+                        Instruction::Sub(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::Mul => {
+                        Instruction::Mul(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::Div => {
+                        Instruction::Div(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::Mod => {
+                        Instruction::Mod(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
                 });
                 instructions
             }
@@ -339,17 +366,19 @@ impl Builder {
                 let expr_name = self.new_temp();
                 let mut instructions = self.generate_expression(expr, expr_name.clone());
                 instructions.push(match kind {
-                    UnOpKind::Plus => Instruction::Assign(name, expr_name),
-                    UnOpKind::Minus => Instruction::Negate(name, expr_name),
+                    UnOpKind::Plus => Instruction::Assign(name, Value::Var(expr_name)),
+                    UnOpKind::Minus => Instruction::Negate(name, Value::Var(expr_name)),
                 });
                 instructions
             }
             Expression::Paren { ref expr, .. } => self.generate_expression(expr, name),
             Expression::Identifier { ref id, .. } => {
                 self.vars.insert(id.clone());
-                vec![Instruction::Assign(name, id.clone())]
+                vec![Instruction::Assign(name, Value::Var(id.clone()))]
             }
-            Expression::Number { value, .. } => vec![Instruction::SetConst(name, value)],
+            Expression::Number { value, .. } => {
+                vec![Instruction::Assign(name, Value::Const(value))]
+            }
         }
     }
 }

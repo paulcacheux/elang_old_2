@@ -1,9 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use itertools::Itertools;
-use ir::{BasicBlock, Branch, Instruction, Function};
+use ir::{BasicBlock, Branch, Instruction, Function, Value};
 
 pub fn optimize(func: &mut Function) {
     propagate_jumps(&mut func.blocks);
+    for _ in 0..3 {
+        propagate_values(&mut func.blocks);
+        fold_constants(&mut func.blocks);
+    }
+    remove_unused_vars(func);
     simplify_jumps(&mut func.blocks);
     remove_unreachable_blocks(&mut func.blocks);
 }
@@ -50,8 +54,8 @@ pub fn simplify_jumps(blocks: &mut Vec<BasicBlock>) {
     for block in blocks.iter_mut() {
         let new_branch = match block.branch {
             Branch::JmpP(_, ref dest1, ref dest2) |
-            Branch::JmpP(_, ref dest1, ref dest2) |
-            Branch::JmpP(_, ref dest1, ref dest2) if *dest1 == *dest2 => Branch::Jmp(dest1.clone()),
+            Branch::JmpN(_, ref dest1, ref dest2) |
+            Branch::JmpZ(_, ref dest1, ref dest2) if *dest1 == *dest2 => Branch::Jmp(dest1.clone()),
             ref other_br => other_br.clone(),
         };
         block.branch = new_branch;
@@ -59,7 +63,7 @@ pub fn simplify_jumps(blocks: &mut Vec<BasicBlock>) {
 }
 
 pub fn remove_unreachable_blocks(blocks: &mut Vec<BasicBlock>) {
-    let mut map_blocks: HashMap<_, _> =
+    let map_blocks: HashMap<_, _> =
         blocks.iter().cloned().map(|block| (block.name.clone(), block)).collect();
 
     let first_block_label = blocks.first().unwrap().name.clone();
@@ -89,5 +93,127 @@ fn can_reach(branch: &Branch) -> Vec<String> {
         Branch::JmpZ(_, dest1, dest2) => vec![dest1, dest2],
         Branch::JmpN(_, dest1, dest2) => vec![dest1, dest2],
         Branch::Ret => Vec::new(),
+    }
+}
+
+pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
+    for block in blocks.iter_mut() {
+        let mut mapping: HashMap<String, Value> = HashMap::new();
+        for instruction in block.instructions.iter_mut() {
+            match *instruction {
+                Instruction::Assign(_, ref mut value) => change_value(value, &mapping),
+                Instruction::Add(_, ref mut lhs, ref mut rhs) |
+                Instruction::Sub(_, ref mut lhs, ref mut rhs) |
+                Instruction::Mul(_, ref mut lhs, ref mut rhs) |
+                Instruction::Div(_, ref mut lhs, ref mut rhs) |
+                Instruction::Mod(_, ref mut lhs, ref mut rhs) => {
+                    change_value(lhs, &mapping);
+                    change_value(rhs, &mapping);
+                }
+                Instruction::Negate(_, ref mut value) |
+                Instruction::Print(ref mut value) => change_value(value, &mapping),
+                Instruction::Read(_) => {}
+            }
+
+            if let Instruction::Assign(ref dest, ref value) = *instruction {
+                mapping.insert(dest.clone(), value.clone());
+            }
+        }
+
+        match block.branch {
+            Branch::JmpP(ref mut cond, _, _) |
+            Branch::JmpN(ref mut cond, _, _) |
+            Branch::JmpZ(ref mut cond, _, _) => change_value(cond, &mapping),
+            _ => {}
+        }
+    }
+}
+
+fn change_value(value: &mut Value, mapping: &HashMap<String, Value>) {
+    let old_value = value.clone();
+    if let Value::Var(name) = old_value {
+        if let Some(real_value) = mapping.get(&name).cloned() {
+            *value = real_value;
+        }
+    }
+}
+
+pub fn remove_unused_vars(func: &mut Function) {
+    let mut read_vars: HashSet<String> = HashSet::new();
+
+    for block in func.blocks.iter_mut() {
+        for instruction in block.instructions.iter_mut() {
+            match *instruction {
+                Instruction::Assign(_, ref mut value) => add_read_name(value, &mut read_vars),
+                Instruction::Add(_, ref mut lhs, ref mut rhs) |
+                Instruction::Sub(_, ref mut lhs, ref mut rhs) |
+                Instruction::Mul(_, ref mut lhs, ref mut rhs) |
+                Instruction::Div(_, ref mut lhs, ref mut rhs) |
+                Instruction::Mod(_, ref mut lhs, ref mut rhs) => {
+                    add_read_name(lhs, &mut read_vars);
+                    add_read_name(rhs, &mut read_vars);
+                }
+                Instruction::Negate(_, ref mut value) |
+                Instruction::Print(ref mut value) => add_read_name(value, &mut read_vars),
+                Instruction::Read(_) => {}
+            }
+        }
+        match block.branch {
+            Branch::JmpP(ref mut cond, _, _) |
+            Branch::JmpN(ref mut cond, _, _) |
+            Branch::JmpZ(ref mut cond, _, _) => add_read_name(cond, &mut read_vars),
+            _ => {}
+        }
+    }
+
+    for block in func.blocks.iter_mut() {
+        block.instructions.retain(|&ref instruction| {
+            match *instruction {
+                Instruction::Assign(ref dest, _) |
+                Instruction::Add(ref dest, _, _) |
+                Instruction::Sub(ref dest, _, _) |
+                Instruction::Mul(ref dest, _, _) |
+                Instruction::Div(ref dest, _, _) |
+                Instruction::Mod(ref dest, _, _) |
+                Instruction::Negate(ref dest, _) => read_vars.contains(dest),
+                _ => true,
+            }
+        });
+    }
+
+    func.vars = read_vars;
+}
+
+fn add_read_name(value: &Value, read_vars: &mut HashSet<String>) {
+    if let Value::Var(ref var) = *value {
+        read_vars.insert(var.clone());
+    }
+}
+
+pub fn fold_constants(blocks: &mut Vec<BasicBlock>) {
+    for block in blocks.iter_mut() {
+        for instruction in block.instructions.iter_mut() {
+            *instruction = match instruction.clone() {
+                Instruction::Add(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const(a + b))
+                }
+                Instruction::Sub(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const(a - b))
+                }
+                Instruction::Mul(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const(a * b))
+                }
+                Instruction::Div(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const(a / b))
+                }
+                Instruction::Mod(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const(a % b))
+                }
+                Instruction::Negate(dest, Value::Const(a)) => {
+                    Instruction::Assign(dest, Value::Const(-a))
+                }
+                _ => instruction.clone(),
+            }
+        }
     }
 }

@@ -1,5 +1,4 @@
 use std::iter::Peekable;
-use std::fmt;
 
 use ast::{Program, Statement, Expression, BinOpKind, UnOpKind};
 use source::Span;
