@@ -9,15 +9,12 @@ use diagnostic::DiagnosticEngine;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
     pub begin: usize,
-    pub end: usize
+    pub end: usize,
 }
 
 impl Span {
     pub fn new(b: usize, e: usize) -> Span {
-        Span {
-            begin: b,
-            end: e
-        }
+        Span { begin: b, end: e }
     }
 
     pub fn new_with_len(b: usize, len: usize) -> Span {
@@ -27,7 +24,7 @@ impl Span {
     pub fn merge(a: Span, b: Span) -> Span {
         Span {
             begin: a.begin,
-            end: b.end
+            end: b.end,
         }
     }
 }
@@ -39,7 +36,7 @@ pub fn write_to_file<P: AsRef<Path>>(path: P, content: String) -> io::Result<()>
 
 #[derive(Debug, Clone)]
 pub struct Manager {
-    pub source: String
+    pub source: String,
 }
 
 impl Manager {
@@ -47,29 +44,25 @@ impl Manager {
         let mut file = try!(File::open(path));
         let mut raw_input = String::new();
         try!(file.read_to_string(&mut raw_input));
-        Ok(Manager {
-            source: raw_input
-        })
+        Ok(Manager { source: raw_input })
     }
 
     pub fn reader<'a>(&'a self) -> Reader<'a> {
         Reader {
             iter: self.source.char_indices(),
-            commenting: false
+            commenting: false,
         }
     }
 
     pub fn diagnostic_engine<'a>(&'a self) -> DiagnosticEngine<'a> {
-        DiagnosticEngine {
-            source: &self.source
-        }
+        DiagnosticEngine { source: &self.source }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
     iter: str::CharIndices<'a>,
-    commenting: bool
+    commenting: bool,
 }
 
 impl<'a> Iterator for Reader<'a> {
@@ -78,10 +71,16 @@ impl<'a> Iterator for Reader<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((bytepos, c)) = self.iter.next() {
             match (c, self.commenting) {
-                ('{', false) => { self.commenting = true; self.next() },
-                ('}', true) => { self.commenting = false; self.next() },
-                (c, false) => { Some((bytepos, c)) },
-                (_, true) => { self.next() }
+                ('{', false) => {
+                    self.commenting = true;
+                    self.next()
+                }
+                ('}', true) => {
+                    self.commenting = false;
+                    self.next()
+                }
+                (c, false) => Some((bytepos, c)),
+                (_, true) => self.next(),
             }
         } else {
             None

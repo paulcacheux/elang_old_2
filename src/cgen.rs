@@ -1,110 +1,123 @@
+use itertools::Itertools;
+
 use std::collections::HashSet;
 
-use ast;
-use ast::{Program, IfKind, Statement, Expression, BinOpKind, UnOpKind};
+use ir::{BasicBlock, Branch, Instruction};
 
-pub fn generate(program: &Program) -> String {
+pub fn generate(blocks: Vec<BasicBlock>) -> String {
     let header = "#include <stdlib.h>\n#include <stdio.h>\n\nint main() {\n";
     let footer = "return 0;\n}\n";
 
+
     let mut builder = Builder {
-        vars: HashSet::new(),
-        output: String::new()
+        vars: HashSet::new()
     };
 
-    let content = builder.generate_program(program);
+    let mut content = String::new();
+    for block in blocks {
+        content.push_str(&builder.generate_block(block));
+    }
 
-    let init: String = builder.vars.into_iter().map(|var| format!("int {} = 0;\n", var)).collect();
-
+    let init = format!("long {};\n", builder.vars.into_iter().join(", "));
     format!("{}{}{}{}", header, init, content, footer)
 }
 
 struct Builder {
-    vars: HashSet<String>,
-    output: String
+    vars: HashSet<String>
 }
 
 impl Builder {
-    fn generate_program(&mut self, program: &Program) -> String {
-        program.stmts.iter().map(|stmt| self.generate_statement(stmt)).collect()
+    fn generate_block(&mut self, block: BasicBlock) -> String {
+        let mut result = format!("{}:\n", block.name);
+        for instruction in block.instructions {
+            result.push_str(&self.generate_instruction(instruction));
+        }
+        result.push_str(&self.generate_branch(block.branch));
+        result
     }
 
-    fn generate_statement(&mut self, statement: &Statement) -> String {
-        match *statement {
-            Statement::Print { ref expr, .. } => {
-                format!("printf(\"%d\\n\", {});\n", self.generate_expression(expr))
+    fn generate_instruction(&mut self, instruction: Instruction) -> String {
+        match instruction {
+            Instruction::SetConst(ref dest, value) => {
+                self.vars.insert(dest.clone());
+                format!("\t{} = {};\n", dest, value)
             },
-            Statement::Read { ref target_id, .. } => {
-                self.vars.insert(target_id.clone());
-                format!("scanf(\"%d\", &{});\n", target_id)
+            Instruction::Assign(ref dest, ref src) => {
+                self.vars.insert(dest.clone());
+                self.vars.insert(src.clone());
+                format!("\t{} = {};\n", dest, src)
             },
-            Statement::If { kind, ref cond, ref if_stmts, ref else_stmts, .. } => {
-                let mut if_branch = format!("if ({} {}) {{\n{}}}\n",
-                    self.generate_expression(cond),
-                    match kind {
-                        IfKind::Negative => " < 0",
-                        IfKind::Positive => " > 0",
-                        IfKind::Zero => " == 0"
-                    },
-                    if_stmts.iter().map(|stmt| self.generate_statement(stmt)).collect::<String>()
-                );
-
-                if let &Some(ref else_stmts) = else_stmts {
-                    if_branch += &format!("else {{\n{}}}\n",
-                        else_stmts.iter().map(|stmt| self.generate_statement(stmt)).collect::<String>()
-                    );
-                }
-                if_branch
+            Instruction::Add(ref dest, ref lhs, ref rhs) => {
+                self.vars.insert(lhs.clone());
+                self.vars.insert(rhs.clone());
+                format!("\t{} = {} + {};\n", dest, lhs, rhs)
             },
-            Statement::Loop { ref stmts, .. } => {
-                format!("for(;;) {{\n{}}}\n",
-                    stmts.iter().map(|stmt| self.generate_statement(stmt)).collect::<String>()
-                )
+            Instruction::Sub(ref dest, ref lhs, ref rhs) => {
+                self.vars.insert(lhs.clone());
+                self.vars.insert(rhs.clone());
+                format!("\t{} = {} - {};\n", dest, lhs, rhs)
             },
-            Statement::Break { .. } => {
-                format!("break;\n")
+            Instruction::Mul(ref dest, ref lhs, ref rhs) => {
+                self.vars.insert(lhs.clone());
+                self.vars.insert(rhs.clone());
+                format!("\t{} = {} * {};\n", dest, lhs, rhs)
             },
-            Statement::Assign { ref target_id, ref value, .. } => {
-                self.vars.insert(target_id.clone());
-                format!("{} = {};\n", target_id, self.generate_expression(value))
+            Instruction::Div(ref dest, ref lhs, ref rhs) => {
+                self.vars.insert(lhs.clone());
+                self.vars.insert(rhs.clone());
+                format!("\t{} = {} / {};\n", dest, lhs, rhs)
+            },
+            Instruction::Mod(ref dest, ref lhs, ref rhs) => {
+                self.vars.insert(lhs.clone());
+                self.vars.insert(rhs.clone());
+                format!("\t{} = {} % {};\n", dest, lhs, rhs)
+            },
+            Instruction::Negate(ref dest, ref value) => {
+                self.vars.insert(dest.clone());
+                self.vars.insert(value.clone());
+                format!("\t{} = -{};\n", dest, value)
+            },
+            Instruction::Print(ref value) => {
+                self.vars.insert(value.clone());
+                format!("\tprintf(\"%ld\\n\", {});\n", value)
+            },
+            Instruction::Read(ref dest) => {
+                self.vars.insert(dest.clone());
+                format!("\tscanf(\"%ld\", &{});\n", dest)
             }
         }
     }
 
-    fn generate_expression(&mut self, expression: &Expression) -> String {
-        match *expression {
-            Expression::BinOp { kind, ref lhs, ref rhs, .. } => {
-                format!("({} {} {})",
-                    self.generate_expression(lhs),
-                    match kind {
-                        BinOpKind::Add => "+",
-                        BinOpKind::Sub => "-",
-                        BinOpKind::Times => "*",
-                        BinOpKind::Divide => "/",
-                        BinOpKind::Modulo => "%"
-                    },
-                    self.generate_expression(rhs)
+    fn generate_branch(&mut self, branch: Branch) -> String {
+        match branch {
+            Branch::Jmp(ref dest) => {
+                format!("\tgoto {};\n", dest)
+            },
+            Branch::JmpP(ref cond, ref true_label, ref false_label) => {
+                self.vars.insert(cond.clone());
+                format!("\tif ({} > 0) {{ goto {}; }} else {{ goto {}; }}\n",
+                    cond,
+                    true_label,
+                    false_label
                 )
             },
-            Expression::UnOp { kind, ref expr, .. } => {
-                format!("({}({}))",
-                    match kind {
-                        UnOpKind::Positive => "+",
-                        UnOpKind::Negative => "-"
-                    },
-                    self.generate_expression(expr)
+            Branch::JmpZ(ref cond, ref true_label, ref false_label) => {
+                self.vars.insert(cond.clone());
+                format!("\tif ({} == 0) {{ goto {}; }} else {{ goto {}; }}\n",
+                    cond,
+                    true_label,
+                    false_label
                 )
             },
-            Expression::Paren { ref expr, .. } => {
-                format!("({})", self.generate_expression(expr))
+            Branch::JmpN(ref cond, ref true_label, ref false_label) => {
+                self.vars.insert(cond.clone());
+                format!("\tif ({} < 0) {{ goto {}; }} else {{ goto {}; }}\n",
+                    cond,
+                    true_label,
+                    false_label
+                )
             },
-            Expression::Identifier { ref id, .. } => {
-                self.vars.insert(id.clone());
-                format!("{}", id)
-            },
-            Expression::Number { value, .. } => {
-                format!("({})", value)
-            }
+            Branch::Ret => format!("\treturn 0;\n"),
         }
     }
 }

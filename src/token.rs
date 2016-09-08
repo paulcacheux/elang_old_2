@@ -21,7 +21,7 @@ pub enum Token {
     DivideOp,
     ModOp,
     Number(i64),
-    Identifier(String)
+    Identifier(String),
 }
 
 impl fmt::Display for Token {
@@ -33,11 +33,13 @@ impl fmt::Display for Token {
             Token::PrintKw => write!(f, "PRINT"),
             Token::LoopKw => write!(f, "LOOP"),
             Token::BreakKw => write!(f, "BREAK"),
-            Token::IfKw(if_kind) => match if_kind {
-                IfKind::Negative => write!(f, "IFN"),
-                IfKind::Positive => write!(f, "IFP"),
-                IfKind::Zero => write!(f, "IFZ")
-            },
+            Token::IfKw(if_kind) => {
+                match if_kind {
+                    IfKind::Negative => write!(f, "IFN"),
+                    IfKind::Positive => write!(f, "IFP"),
+                    IfKind::Zero => write!(f, "IFZ"),
+                }
+            }
             Token::ElseKw => write!(f, "ELSE"),
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
@@ -48,7 +50,7 @@ impl fmt::Display for Token {
             Token::DivideOp => write!(f, "/"),
             Token::ModOp => write!(f, "%"),
             Token::Number(n) => write!(f, "{}", n),
-            Token::Identifier(ref id) => write!(f, "{}", id)
+            Token::Identifier(ref id) => write!(f, "{}", id),
         }
     }
 }

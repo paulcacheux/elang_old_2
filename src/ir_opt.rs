@@ -30,7 +30,7 @@ pub fn propagate_jumps(mut blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
                 if let Some(new_dest) = directions.get(dest) {
                     *dest = new_dest.clone();
                 }
-            },
+            }
             Branch::JmpP(_, ref mut true_dest, ref mut false_label) |
             Branch::JmpN(_, ref mut true_dest, ref mut false_label) |
             Branch::JmpZ(_, ref mut true_dest, ref mut false_label) => {
@@ -40,7 +40,7 @@ pub fn propagate_jumps(mut blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
                 if let Some(new_dest) = directions.get(false_label) {
                     *false_label = new_dest.clone();
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -61,7 +61,7 @@ fn can_reach(branch: &Branch) -> Vec<String> {
         Branch::JmpP(_, dest1, dest2) => vec![dest1, dest2],
         Branch::JmpZ(_, dest1, dest2) => vec![dest1, dest2],
         Branch::JmpN(_, dest1, dest2) => vec![dest1, dest2],
-        Branch::Ret => Vec::new()
+        Branch::Ret => Vec::new(),
     }
 }
 

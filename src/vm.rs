@@ -23,19 +23,19 @@ pub enum OpCode {
     JmpP(usize),
     JmpN(usize),
     JmpZ(usize),
-    Exit
+    Exit,
 }
 
 pub struct Builder {
     pub opcodes: Vec<OpCode>,
-    waiting_break: Vec<Vec<usize>>
+    waiting_break: Vec<Vec<usize>>,
 }
 
 impl Builder {
     pub fn new() -> Builder {
         Builder {
             opcodes: Vec::new(),
-            waiting_break: vec![Vec::new()]
+            waiting_break: vec![Vec::new()],
         }
     }
 
@@ -72,11 +72,11 @@ impl Builder {
             Statement::Print { ref expr, .. } => {
                 self.visit_expression(expr);
                 self.opcodes.push(OpCode::Print);
-            },
+            }
             Statement::Read { ref target_id, .. } => {
                 self.opcodes.push(OpCode::Read);
                 self.opcodes.push(OpCode::StoreInto(target_id.clone()));
-            },
+            }
             Statement::If { kind, ref cond, ref if_stmts, ref else_stmts, .. } => {
                 self.visit_expression(cond);
 
@@ -84,7 +84,7 @@ impl Builder {
                 self.opcodes.push(match kind {
                     IfKind::Positive => OpCode::JmpP(first_target),
                     IfKind::Negative => OpCode::JmpN(first_target),
-                    IfKind::Zero => OpCode::JmpZ(first_target)
+                    IfKind::Zero => OpCode::JmpZ(first_target),
                 });
 
                 let abs_jump = self.opcodes.len();
@@ -108,7 +108,7 @@ impl Builder {
                     self.opcodes[skip_else] = OpCode::Jmp(final_addr);
                 }
                 self.opcodes[abs_jump] = OpCode::Jmp(second_target);
-            },
+            }
             Statement::Loop { ref stmts, .. } => {
                 self.start_loop();
                 let target = self.opcodes.len();
@@ -118,12 +118,12 @@ impl Builder {
                 self.opcodes.push(OpCode::Jmp(target));
                 let break_target_addr = self.opcodes.len();
                 self.end_loop(break_target_addr);
-            },
+            }
             Statement::Break { .. } => {
                 let break_addr = self.opcodes.len();
                 self.register_break(break_addr);
                 self.opcodes.push(OpCode::Jmp(0));
-            },
+            }
             Statement::Assign { ref target_id, ref value, .. } => {
                 self.visit_expression(value);
                 self.opcodes.push(OpCode::StoreInto(target_id.clone()));
@@ -141,21 +141,21 @@ impl Builder {
                     BinOpKind::Sub => OpCode::BinarySub,
                     BinOpKind::Times => OpCode::BinaryTimes,
                     BinOpKind::Divide => OpCode::BinaryDivide,
-                    BinOpKind::Modulo => OpCode::BinaryModulo
+                    BinOpKind::Modulo => OpCode::BinaryModulo,
                 });
-            },
+            }
             Expression::UnOp { kind, ref expr, .. } => {
                 self.visit_expression(expr);
                 if kind == UnOpKind::Negative {
                     self.opcodes.push(OpCode::UnaryNeg);
                 }
-            },
+            }
             Expression::Paren { ref expr, .. } => {
                 self.visit_expression(expr);
-            },
+            }
             Expression::Identifier { ref id, .. } => {
                 self.opcodes.push(OpCode::PushVar(id.clone()));
-            },
+            }
             Expression::Number { value, .. } => {
                 self.opcodes.push(OpCode::PushConst(value));
             }
@@ -174,78 +174,78 @@ pub fn run(opcodes: Vec<OpCode>) {
         match *opcode {
             OpCode::PushConst(val) => {
                 stack.push(val);
-            },
+            }
             OpCode::PushVar(ref id) => {
                 stack.push(memory.get(id).cloned().unwrap_or(0));
-            },
+            }
             OpCode::StoreInto(ref id) => {
                 memory.insert(id.clone(), stack.pop().unwrap());
-            },
+            }
             OpCode::Pop => {
                 stack.pop();
-            },
+            }
             OpCode::Dup => {
                 let val = stack.last().cloned().unwrap();
                 stack.push(val);
-            },
+            }
             OpCode::BinaryAdd => {
                 let b = stack.pop().unwrap();
                 let a = stack.pop().unwrap();
                 stack.push(a + b);
-            },
+            }
             OpCode::BinarySub => {
                 let b = stack.pop().unwrap();
                 let a = stack.pop().unwrap();
                 stack.push(a - b);
-            },
+            }
             OpCode::BinaryTimes => {
                 let b = stack.pop().unwrap();
                 let a = stack.pop().unwrap();
                 stack.push(a * b);
-            },
+            }
             OpCode::BinaryDivide => {
                 let b = stack.pop().unwrap();
                 let a = stack.pop().unwrap();
                 stack.push(a / b);
-            },
+            }
             OpCode::BinaryModulo => {
                 let b = stack.pop().unwrap();
                 let a = stack.pop().unwrap();
                 stack.push(a % b);
-            },
+            }
             OpCode::UnaryNeg => {
                 let val = stack.pop().unwrap();
                 stack.push(-val);
-            },
+            }
             OpCode::Print => {
                 println!("{}", stack.pop().unwrap());
-            },
+            }
             OpCode::Read => {
                 let mut line = String::new();
                 io::stdin().read_line(&mut line).unwrap();
                 stack.push(line.parse::<i64>().unwrap_or(0));
-            },
+            }
             OpCode::Jmp(target) => {
                 pc = target;
-            },
+            }
             OpCode::JmpP(target) => {
                 let val = stack.pop().unwrap();
                 if val > 0 {
                     pc = target;
                 }
-            },
+            }
             OpCode::JmpN(target) => {
                 let val = stack.pop().unwrap();
                 if val < 0 {
                     pc = target;
                 }
-            },
+            }
             OpCode::JmpZ(target) => {
                 let val = stack.pop().unwrap();
                 if val == 0 {
                     pc = target;
                 }
-            },
+            }
             OpCode::Exit => {
                 return;
             }

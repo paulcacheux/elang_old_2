@@ -3,45 +3,35 @@ use source::Span;
 #[derive(Debug, Clone)]
 pub struct Program {
     pub stmts: Vec<Statement>,
-    pub span: Span
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IfKind {
     Negative,
     Positive,
-    Zero
+    Zero,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement { //TODO: span is a bit repetitive
-    Print {
-        expr: Expression,
-        span: Span
-    },
-    Read {
-        target_id: String,
-        span: Span
-    },
+pub enum Statement {
+    // TODO: span is a bit repetitive
+    Print { expr: Expression, span: Span },
+    Read { target_id: String, span: Span },
     If {
         kind: IfKind,
         cond: Expression,
         if_stmts: Vec<Statement>,
         else_stmts: Option<Vec<Statement>>,
-        span: Span
+        span: Span,
     },
-    Loop {
-        stmts: Vec<Statement>,
-        span: Span
-    },
-    Break {
-        span: Span
-    },
+    Loop { stmts: Vec<Statement>, span: Span },
+    Break { span: Span },
     Assign {
         target_id: String,
         value: Expression,
-        span: Span
-    }
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +40,7 @@ pub enum BinOpKind {
     Sub,
     Mul,
     Div,
-    Mod
+    Mod,
 }
 
 impl BinOpKind {
@@ -60,7 +50,7 @@ impl BinOpKind {
             BinOpKind::Sub => a - b,
             BinOpKind::Mul => a * b,
             BinOpKind::Div => a / b,
-            BinOpKind::Mod => a % b
+            BinOpKind::Mod => a % b,
         }
     }
 }
@@ -68,14 +58,14 @@ impl BinOpKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOpKind {
     Plus,
-    Minus
+    Minus,
 }
 
 impl UnOpKind {
     pub fn apply(self, val: i64) -> i64 {
         match self {
             UnOpKind::Plus => val, // noop
-            UnOpKind::Minus => -val
+            UnOpKind::Minus => -val,
         }
     }
 }
@@ -86,25 +76,16 @@ pub enum Expression {
         kind: BinOpKind,
         lhs: Box<Expression>,
         rhs: Box<Expression>,
-        span: Span
+        span: Span,
     },
     UnOp {
         kind: UnOpKind,
         expr: Box<Expression>,
-        span: Span
+        span: Span,
     },
-    Paren {
-        expr: Box<Expression>,
-        span: Span
-    },
-    Identifier {
-        id: String,
-        span: Span
-    },
-    Number {
-        value: i64,
-        span: Span
-    }
+    Paren { expr: Box<Expression>, span: Span },
+    Identifier { id: String, span: Span },
+    Number { value: i64, span: Span },
 }
 
 impl Expression {
@@ -114,7 +95,7 @@ impl Expression {
             Expression::UnOp { span, .. } => span,
             Expression::Paren { span, .. } => span,
             Expression::Identifier { span, .. } => span,
-            Expression::Number { span, .. } => span
+            Expression::Number { span, .. } => span,
         }
     }
 }

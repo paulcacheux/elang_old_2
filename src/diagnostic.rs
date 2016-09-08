@@ -6,7 +6,7 @@ use parser::ParseError;
 
 #[derive(Debug, Clone)]
 pub struct DiagnosticEngine<'a> {
-    pub source: &'a str
+    pub source: &'a str,
 }
 
 impl<'a> DiagnosticEngine<'a> {
@@ -52,38 +52,42 @@ impl fmt::Display for ErrorLine {
 #[derive(Debug, Clone)]
 struct RenderError {
     pub description: String,
-    pub lines: Vec<ErrorLine>
+    pub lines: Vec<ErrorLine>,
 }
 
 impl RenderError {
     pub fn from_span(span: Span, description: String, source: &str) -> RenderError {
-        let arrow: String = source.char_indices().map(|(pos, c)| {
-            if c == '\n' {
-                c
-            } else if span.begin <= pos && pos < span.end {
-                '^'
-            } else {
-                ' '
-            }
-        }).collect();
+        let arrow: String = source.char_indices()
+            .map(|(pos, c)| {
+                if c == '\n' {
+                    c
+                } else if span.begin <= pos && pos < span.end {
+                    '^'
+                } else {
+                    ' '
+                }
+            })
+            .collect();
 
-        let lines: Vec<_> = source.lines().zip(arrow.lines())
-        .enumerate()
-        .filter_map(|(index, (src, arrow))| {
-            if arrow.contains('^') {
-                Some(ErrorLine{
-                    line: index + 1,
-                    src: String::from(src),
-                    arrow: String::from(arrow)
-                })
-            } else {
-                None
-            }
-        }).collect();
+        let lines: Vec<_> = source.lines()
+            .zip(arrow.lines())
+            .enumerate()
+            .filter_map(|(index, (src, arrow))| {
+                if arrow.contains('^') {
+                    Some(ErrorLine {
+                        line: index + 1,
+                        src: String::from(src),
+                        arrow: String::from(arrow),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         RenderError {
             description: description,
-            lines: lines
+            lines: lines,
         }
     }
 }

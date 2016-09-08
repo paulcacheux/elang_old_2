@@ -5,13 +5,13 @@ use ast::{Program, Statement, Expression, BinOpKind, UnOpKind};
 use source::Span;
 use token::Token;
 
-pub struct Parser<L: IntoIterator<Item=(Span, Token)>> {
-    lexer: Peekable<L::IntoIter>
+pub struct Parser<L: IntoIterator<Item = (Span, Token)>> {
+    lexer: Peekable<L::IntoIter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    Unexpected(String, Option<Span>)
+    Unexpected(String, Option<Span>),
 }
 
 macro_rules! expect { // we return the span for propagation
@@ -40,11 +40,9 @@ macro_rules! return_unexpected {
     }
 }
 
-impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
+impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     pub fn new(lexer: L) -> Parser<L> {
-        Parser {
-            lexer: lexer.into_iter().peekable()
-        }
+        Parser { lexer: lexer.into_iter().peekable() }
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
@@ -61,7 +59,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
 
         Ok(Program {
             stmts: statements,
-            span: Span::merge(begin_span, end_span)
+            span: Span::merge(begin_span, end_span),
         })
     }
 
@@ -80,7 +78,9 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
             Some((_, Token::LoopKw)) => self.parse_loop_statement(),
             Some((_, Token::BreakKw)) => self.parse_break_statement(),
             Some((_, Token::Identifier(_))) => self.parse_assign_statement(),
-            other => return_unexpected!("PRINT, READ, IFN, IFP, IFZ, LOOP, BREAK, identifier", other)
+            other => {
+                return_unexpected!("PRINT, READ, IFN, IFP, IFZ, LOOP, BREAK, identifier", other)
+            }
         }
     }
 
@@ -92,7 +92,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         let expr_span = expr.span();
         Ok(Statement::Print {
             expr: expr,
-            span: Span::merge(kw_span, expr_span)
+            span: Span::merge(kw_span, expr_span),
         })
     }
 
@@ -102,11 +102,11 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         let kw_span = expect!(self.lexer, Token::ReadKw, "READ");
         let (span, id) = match self.lexer.next() {
             Some((span, Token::Identifier(id))) => (span, id),
-            other => return_unexpected!("identifier", other)
+            other => return_unexpected!("identifier", other),
         };
         Ok(Statement::Read {
             target_id: id,
-            span: Span::merge(kw_span, span)
+            span: Span::merge(kw_span, span),
         })
     }
 
@@ -115,12 +115,13 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
 
         let (kw_span, if_kind) = match self.lexer.next() {
             Some((span, Token::IfKw(kind))) => (span, kind),
-            other => return_unexpected!("IFN, IFP or IFZ", other)
+            other => return_unexpected!("IFN, IFP or IFZ", other),
         };
 
         let condition = try!(self.parse_expression());
         let mut if_statements = Vec::new();
-        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::ElseKw, Token::EndKw) {
+        while self.lexer.peek().is_some() &&
+              !match_peek_token!(self.lexer, Token::ElseKw, Token::EndKw) {
             if_statements.push(try!(self.parse_statement()));
         }
         let else_statements = {
@@ -141,7 +142,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
             cond: condition,
             if_stmts: if_statements,
             else_stmts: else_statements,
-            span: Span::merge(kw_span, end_span)
+            span: Span::merge(kw_span, end_span),
         })
     }
 
@@ -156,7 +157,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         let end_span = expect!(self.lexer, Token::EndKw, "END");
         Ok(Statement::Loop {
             stmts: statements,
-            span: Span::merge(kw_span, end_span)
+            span: Span::merge(kw_span, end_span),
         })
     }
 
@@ -164,9 +165,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         // break-statement = BREAK
 
         let kw_span = expect!(self.lexer, Token::BreakKw, "BREAK");
-        Ok(Statement::Break {
-            span: kw_span
-        })
+        Ok(Statement::Break { span: kw_span })
     }
 
     pub fn parse_assign_statement(&mut self) -> Result<Statement, ParseError> {
@@ -174,7 +173,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
 
         let (id_span, id) = match self.lexer.next() {
             Some((span, Token::Identifier(id))) => (span, id),
-            other => return_unexpected!("identifier", other)
+            other => return_unexpected!("identifier", other),
         };
         expect!(self.lexer, Token::AssignOp, "=");
         let value = try!(self.parse_expression());
@@ -182,7 +181,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         Ok(Statement::Assign {
             target_id: id,
             value: value,
-            span: Span::merge(id_span, expr_span)
+            span: Span::merge(id_span, expr_span),
         })
     }
 
@@ -190,11 +189,12 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         // expression = factor { [+|-] factor }
 
         let mut lhs = try!(self.parse_factor());
-        while self.lexer.peek().is_some() && match_peek_token!(self.lexer, Token::PlusOp, Token::MinusOp) {
+        while self.lexer.peek().is_some() &&
+              match_peek_token!(self.lexer, Token::PlusOp, Token::MinusOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::PlusOp)) => BinOpKind::Add,
                 Some((_, Token::MinusOp)) => BinOpKind::Sub,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
             let rhs = try!(self.parse_factor());
@@ -203,7 +203,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
                 kind: binop_kind,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-                span: span
+                span: span,
             };
         }
         Ok(lhs)
@@ -213,12 +213,13 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         // factor = term { [*|/|%] term }
 
         let mut lhs = try!(self.parse_term());
-        while self.lexer.peek().is_some() && match_peek_token!(self.lexer, Token::TimesOp, Token::DivideOp, Token::ModOp) {
+        while self.lexer.peek().is_some() &&
+              match_peek_token!(self.lexer, Token::TimesOp, Token::DivideOp, Token::ModOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::TimesOp)) => BinOpKind::Mul,
                 Some((_, Token::DivideOp)) => BinOpKind::Div,
                 Some((_, Token::ModOp)) => BinOpKind::Mod,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
             let rhs = try!(self.parse_term());
@@ -227,7 +228,7 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
                 kind: binop_kind,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
-                span: span
+                span: span,
             };
         }
         Ok(lhs)
@@ -240,41 +241,45 @@ impl<L: IntoIterator<Item=(Span, Token)>> Parser<L> {
         //      | '(' expression ')'
 
         let term = match self.lexer.next() {
-            Some((span, Token::Identifier(id))) => Expression::Identifier {
-                id: id,
-                span: span
-            },
-            Some((span, Token::Number(value))) => Expression::Number {
-                value: value,
-                span: span
-            },
+            Some((span, Token::Identifier(id))) => {
+                Expression::Identifier {
+                    id: id,
+                    span: span,
+                }
+            }
+            Some((span, Token::Number(value))) => {
+                Expression::Number {
+                    value: value,
+                    span: span,
+                }
+            }
             Some((span, Token::LParen)) => {
                 let expr = try!(self.parse_expression());
                 let end_span = expect!(self.lexer, Token::RParen, ")");
                 Expression::Paren {
                     expr: Box::new(expr),
-                    span: Span::merge(span, end_span)
+                    span: Span::merge(span, end_span),
                 }
-            },
+            }
             Some((span, Token::PlusOp)) => {
                 let expr = try!(self.parse_term());
                 let span = Span::merge(span, expr.span());
                 Expression::UnOp {
                     kind: UnOpKind::Plus,
                     expr: Box::new(expr),
-                    span: span
+                    span: span,
                 }
-            },
+            }
             Some((span, Token::MinusOp)) => {
                 let expr = try!(self.parse_term());
                 let span = Span::merge(span, expr.span());
                 Expression::UnOp {
                     kind: UnOpKind::Minus,
                     expr: Box::new(expr),
-                    span: span
+                    span: span,
                 }
-            },
-            other => return_unexpected!("identifier, number, (, +, -", other)
+            }
+            other => return_unexpected!("identifier, number, (, +, -", other),
         };
         Ok(term)
     }

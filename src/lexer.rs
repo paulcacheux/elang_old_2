@@ -19,36 +19,38 @@ fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
         "IFZ" => Token::IfKw(IfKind::Zero),
         "BREAK" => Token::BreakKw,
         "ELSE" => Token::ElseKw,
-        _ => Token::Identifier(raw)
+        _ => Token::Identifier(raw),
     };
     (span, token)
 }
 
 fn is_identifier_char(c: char) -> bool {
     match c {
-        'a' ... 'z' | 'A' ... 'Z' | '_' => true,
-        _ => false
+        'a'...'z' | 'A'...'Z' | '_' => true,
+        _ => false,
     }
 }
 
-pub struct Lexer<'a, R: Iterator<Item=(usize, char)>> {
+pub struct Lexer<'a, R: Iterator<Item = (usize, char)>> {
     input: Peekable<R>,
-    diagnostic: &'a DiagnosticEngine<'a>
+    diagnostic: &'a DiagnosticEngine<'a>,
 }
 
-impl<'a, R: Iterator<Item=(usize, char)>> Lexer<'a, R> {
+impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
     pub fn new(input: R, diag: &'a DiagnosticEngine<'a>) -> Lexer<'a, R> {
         Lexer {
             input: input.peekable(),
-            diagnostic: diag
+            diagnostic: diag,
         }
     }
 
     fn skip_whitespace(&mut self) {
         loop {
             match self.input.peek() {
-                Some(&(_, c)) if c.is_whitespace() => { self.input.next(); },
-                _ => break
+                Some(&(_, c)) if c.is_whitespace() => {
+                    self.input.next();
+                }
+                _ => break,
             }
         }
     }
@@ -62,7 +64,7 @@ impl<'a, R: Iterator<Item=(usize, char)>> Lexer<'a, R> {
         loop {
             match self.input.peek() {
                 Some(&(_, c)) if predicate(c) => res.push(c),
-                _ => break
+                _ => break,
             }
             self.input.next();
         }
@@ -70,7 +72,7 @@ impl<'a, R: Iterator<Item=(usize, char)>> Lexer<'a, R> {
     }
 }
 
-impl<'a, R: Iterator<Item=(usize, char)>> Iterator for Lexer<'a, R> {
+impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
     type Item = (Span, Token);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -79,7 +81,7 @@ impl<'a, R: Iterator<Item=(usize, char)>> Iterator for Lexer<'a, R> {
             Some(match c {
                 c if is_identifier_char(c) => {
                     identifier_or_keyword(self.take_while(c, |c| is_identifier_char(c)), bytepos)
-                },
+                }
                 c if c.is_digit(10) => {
                     let number = self.take_while(c, |c| c.is_digit(10));
                     let value = i64::from_str(&number).unwrap();
@@ -93,7 +95,7 @@ impl<'a, R: Iterator<Item=(usize, char)>> Iterator for Lexer<'a, R> {
                 '*' => (Span::new_with_len(bytepos, 1), Token::TimesOp),
                 '/' => (Span::new_with_len(bytepos, 1), Token::DivideOp),
                 '%' => (Span::new_with_len(bytepos, 1), Token::ModOp),
-                c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos)
+                c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos),
             })
         } else {
             None
