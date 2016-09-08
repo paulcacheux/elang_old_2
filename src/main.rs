@@ -45,18 +45,15 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let blocks = ir::generate(&program);
-    // print_blocks(&blocks);
-    let blocks = ir_opt::optimize(blocks);
-    // print_blocks(&blocks);
-
-    let c_source = cgen::generate(blocks);
-    source::write_to_file(output_path, c_source).unwrap();
-}
-
-fn print_blocks(blocks: &Vec<ir::BasicBlock>) {
-    println!("------------------------------------");
-    for block in blocks {
-        println!("{}", block);
+    let mut main_func = ir::generate(&program);
+    if cfg!(debug_assertions) {
+        println!("non-optimized:\n{}", main_func);
     }
+    ir_opt::optimize(&mut main_func);
+    if cfg!(debug_assertions) {
+        println!("optimized:\n{}", main_func);
+    }
+
+    let c_source = cgen::generate(main_func);
+    source::write_to_file(output_path, c_source).unwrap();
 }

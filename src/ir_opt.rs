@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
-use ir::{BasicBlock, Branch, Instruction};
+use ir::{BasicBlock, Branch, Instruction, Function};
 
-pub fn optimize(blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
-    let blocks = propagate_jumps(blocks);
-    let blocks = remove_unreachable_blocks(blocks);
-    blocks
+pub fn optimize(func: &mut Function) {
+    propagate_jumps(&mut func.blocks);
+    simplify_jumps(&mut func.blocks);
+    remove_unreachable_blocks(&mut func.blocks);
 }
 
-pub fn propagate_jumps(mut blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
+pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
     let mut directions: HashMap<String, String> = HashMap::new();
     for block in blocks.iter() {
         if block.instructions.len() == 0 {
@@ -44,15 +44,42 @@ pub fn propagate_jumps(mut blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
             _ => {}
         }
     }
-    blocks
 }
 
-pub fn remove_unreachable_blocks(mut blocks: Vec<BasicBlock>) -> Vec<BasicBlock> {
+pub fn simplify_jumps(blocks: &mut Vec<BasicBlock>) {
+    for block in blocks.iter_mut() {
+        let new_branch = match block.branch {
+            Branch::JmpP(_, ref dest1, ref dest2) |
+            Branch::JmpP(_, ref dest1, ref dest2) |
+            Branch::JmpP(_, ref dest1, ref dest2) if *dest1 == *dest2 => Branch::Jmp(dest1.clone()),
+            ref other_br => other_br.clone(),
+        };
+        block.branch = new_branch;
+    }
+}
+
+pub fn remove_unreachable_blocks(blocks: &mut Vec<BasicBlock>) {
     let mut map_blocks: HashMap<_, _> =
         blocks.iter().cloned().map(|block| (block.name.clone(), block)).collect();
 
-    let reachable_blocks = reachable_blocks(&mut map_blocks);
-    blocks.into_iter().filter(|ref block| reachable_blocks.contains(&block.name)).collect()
+    let first_block_label = blocks.first().unwrap().name.clone();
+
+    let reachable_blocks = reachable_blocks(first_block_label, &map_blocks);
+    blocks.retain(|ref block| reachable_blocks.contains(&block.name));
+}
+
+fn reachable_blocks(first_block: String, blocks: &HashMap<String, BasicBlock>) -> HashSet<String> {
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut queue = vec![first_block];
+
+    while let Some(block_name) = queue.pop() {
+        if !visited.contains(&block_name) {
+            visited.insert(block_name.clone());
+            let block = blocks.get(&block_name).unwrap();
+            queue.extend(can_reach(&block.branch));
+        }
+    }
+    visited
 }
 
 fn can_reach(branch: &Branch) -> Vec<String> {
@@ -63,18 +90,4 @@ fn can_reach(branch: &Branch) -> Vec<String> {
         Branch::JmpN(_, dest1, dest2) => vec![dest1, dest2],
         Branch::Ret => Vec::new(),
     }
-}
-
-fn reachable_blocks(blocks: &HashMap<String, BasicBlock>) -> HashSet<String> {
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue = vec![String::from("start")];
-
-    while let Some(block_name) = queue.pop() {
-        if !visited.contains(&block_name) {
-            visited.insert(block_name.clone());
-            let block = blocks.get(&block_name).unwrap();
-            queue.extend(can_reach(&block.branch));
-        }
-    }
-    visited
 }
