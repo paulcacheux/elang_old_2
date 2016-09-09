@@ -35,9 +35,7 @@ pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
                     *dest = new_dest.clone();
                 }
             }
-            Branch::JmpP(_, ref mut true_dest, ref mut false_label) |
-            Branch::JmpN(_, ref mut true_dest, ref mut false_label) |
-            Branch::JmpZ(_, ref mut true_dest, ref mut false_label) => {
+            Branch::JmpT(_, ref mut true_dest, ref mut false_label) => {
                 if let Some(new_dest) = directions.get(true_dest) {
                     *true_dest = new_dest.clone();
                 }
@@ -53,9 +51,7 @@ pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
 pub fn simplify_jumps(blocks: &mut Vec<BasicBlock>) {
     for block in blocks {
         let new_branch = match block.branch {
-            Branch::JmpP(_, ref dest1, ref dest2) |
-            Branch::JmpN(_, ref dest1, ref dest2) |
-            Branch::JmpZ(_, ref dest1, ref dest2) if *dest1 == *dest2 => Branch::Jmp(dest1.clone()),
+            Branch::JmpT(_, ref d1, ref d2) if *d1 == *d2 => Branch::Jmp(d1.clone()),
             ref other_br => other_br.clone(),
         };
         block.branch = new_branch;
@@ -89,9 +85,7 @@ fn reachable_blocks(first_block: String, blocks: &HashMap<String, BasicBlock>) -
 fn can_reach(branch: &Branch) -> Vec<String> {
     match branch.clone() {
         Branch::Jmp(dest) => vec![dest],
-        Branch::JmpP(_, dest1, dest2) => vec![dest1, dest2],
-        Branch::JmpZ(_, dest1, dest2) => vec![dest1, dest2],
-        Branch::JmpN(_, dest1, dest2) => vec![dest1, dest2],
+        Branch::JmpT(_, dest1, dest2) => vec![dest1, dest2],
         Branch::Ret => Vec::new(),
     }
 }
@@ -101,16 +95,22 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
         let mut mapping: HashMap<String, Value> = HashMap::new();
         for instruction in &mut block.instructions {
             match *instruction {
-
                 Instruction::Add(_, ref mut lhs, ref mut rhs) |
                 Instruction::Sub(_, ref mut lhs, ref mut rhs) |
                 Instruction::Mul(_, ref mut lhs, ref mut rhs) |
                 Instruction::Div(_, ref mut lhs, ref mut rhs) |
-                Instruction::Mod(_, ref mut lhs, ref mut rhs) => {
+                Instruction::Mod(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpLess(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpLessEq(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpGreater(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpGreaterEq(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpEq(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpNotEq(_, ref mut lhs, ref mut rhs) => {
                     change_value(lhs, &mapping);
                     change_value(rhs, &mapping);
                 }
                 Instruction::Assign(_, ref mut value) |
+                Instruction::LogNot(_, ref mut value) |
                 Instruction::Negate(_, ref mut value) |
                 Instruction::Print(ref mut value) => change_value(value, &mapping),
                 Instruction::Read(_) => {}
@@ -122,9 +122,7 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
         }
 
         match block.branch {
-            Branch::JmpP(ref mut cond, _, _) |
-            Branch::JmpN(ref mut cond, _, _) |
-            Branch::JmpZ(ref mut cond, _, _) => change_value(cond, &mapping),
+            Branch::JmpT(ref mut cond, _, _) => change_value(cond, &mapping),
             _ => {}
         }
     }
@@ -149,20 +147,25 @@ pub fn remove_unused_vars(func: &mut Function) {
                 Instruction::Sub(_, ref mut lhs, ref mut rhs) |
                 Instruction::Mul(_, ref mut lhs, ref mut rhs) |
                 Instruction::Div(_, ref mut lhs, ref mut rhs) |
-                Instruction::Mod(_, ref mut lhs, ref mut rhs) => {
+                Instruction::Mod(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpLess(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpLessEq(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpGreater(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpGreaterEq(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpEq(_, ref mut lhs, ref mut rhs) |
+                Instruction::CmpNotEq(_, ref mut lhs, ref mut rhs) => {
                     add_read_name(lhs, &mut read_vars);
                     add_read_name(rhs, &mut read_vars);
                 }
                 Instruction::Assign(_, ref mut value) |
+                Instruction::LogNot(_, ref mut value) |
                 Instruction::Negate(_, ref mut value) |
                 Instruction::Print(ref mut value) => add_read_name(value, &mut read_vars),
                 Instruction::Read(_) => {}
             }
         }
         match block.branch {
-            Branch::JmpP(ref mut cond, _, _) |
-            Branch::JmpN(ref mut cond, _, _) |
-            Branch::JmpZ(ref mut cond, _, _) => add_read_name(cond, &mut read_vars),
+            Branch::JmpT(ref mut cond, _, _) => add_read_name(cond, &mut read_vars),
             _ => {}
         }
     }
@@ -176,6 +179,13 @@ pub fn remove_unused_vars(func: &mut Function) {
                 Instruction::Mul(ref dest, _, _) |
                 Instruction::Div(ref dest, _, _) |
                 Instruction::Mod(ref dest, _, _) |
+                Instruction::CmpLess(ref dest, _, _) |
+                Instruction::CmpLessEq(ref dest, _, _) |
+                Instruction::CmpGreater(ref dest, _, _) |
+                Instruction::CmpGreaterEq(ref dest, _, _) |
+                Instruction::CmpEq(ref dest, _, _) |
+                Instruction::CmpNotEq(ref dest, _, _) |
+                Instruction::LogNot(ref dest, _) |
                 Instruction::Negate(ref dest, _) => read_vars.contains(dest),
                 _ => true,
             }
@@ -209,6 +219,27 @@ pub fn fold_constants(blocks: &mut Vec<BasicBlock>) {
                 }
                 Instruction::Mod(dest, Value::Const(a), Value::Const(b)) => {
                     Instruction::Assign(dest, Value::Const(a % b))
+                }
+                Instruction::CmpLess(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const((a < b) as i64))
+                }
+                Instruction::CmpLessEq(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const((a <= b) as i64))
+                }
+                Instruction::CmpGreater(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const((a > b) as i64))
+                }
+                Instruction::CmpGreaterEq(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const((a >= b) as i64))
+                }
+                Instruction::CmpEq(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const((a == b) as i64))
+                }
+                Instruction::CmpNotEq(dest, Value::Const(a), Value::Const(b)) => {
+                    Instruction::Assign(dest, Value::Const((a != b) as i64))
+                }
+                Instruction::LogNot(dest, Value::Const(a)) => {
+                    Instruction::Assign(dest, Value::Const((a == 0) as i64))
                 }
                 Instruction::Negate(dest, Value::Const(a)) => {
                     Instruction::Assign(dest, Value::Const(-a))

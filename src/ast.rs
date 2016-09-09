@@ -6,26 +6,23 @@ pub struct Program {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IfKind {
-    Negative,
-    Positive,
-    Zero,
-}
-
 #[derive(Debug, Clone)]
 pub enum Statement {
     // TODO: span is a bit repetitive
     Print { expr: Expression, span: Span },
     Read { target_id: String, span: Span },
     If {
-        kind: IfKind,
         cond: Expression,
         if_stmts: Vec<Statement>,
         else_stmts: Option<Vec<Statement>>,
         span: Span,
     },
     Loop { stmts: Vec<Statement>, span: Span },
+    While {
+        cond: Expression,
+        stmts: Vec<Statement>,
+        span: Span,
+    },
     Break { span: Span },
     Assign {
         target_id: String,
@@ -41,12 +38,19 @@ pub enum BinOpKind {
     Mul,
     Div,
     Mod,
+    Less,
+    LessEq,
+    Greater,
+    GreaterEq,
+    Equal,
+    NotEqual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOpKind {
     Plus,
     Minus,
+    LogNot,
 }
 
 #[derive(Debug, Clone)]

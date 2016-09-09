@@ -1,7 +1,5 @@
 use std::fmt;
 
-use ast::IfKind;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     BeginKw,
@@ -10,8 +8,9 @@ pub enum Token {
     PrintKw,
     LoopKw,
     BreakKw,
-    IfKw(IfKind),
+    IfKw,
     ElseKw,
+    WhileKw,
     LParen,
     RParen,
     AssignOp,
@@ -20,6 +19,13 @@ pub enum Token {
     TimesOp,
     DivideOp,
     ModOp,
+    LessOp,
+    LessEqualOp,
+    GreaterOp,
+    GreaterEqualOp,
+    EqualOp,
+    NotEqualOp,
+    LogNotOp,
     Number(i64),
     Identifier(String),
 }
@@ -33,14 +39,9 @@ impl fmt::Display for Token {
             Token::PrintKw => write!(f, "PRINT"),
             Token::LoopKw => write!(f, "LOOP"),
             Token::BreakKw => write!(f, "BREAK"),
-            Token::IfKw(if_kind) => {
-                match if_kind {
-                    IfKind::Negative => write!(f, "IFN"),
-                    IfKind::Positive => write!(f, "IFP"),
-                    IfKind::Zero => write!(f, "IFZ"),
-                }
-            }
+            Token::IfKw => write!(f, "IF"),
             Token::ElseKw => write!(f, "ELSE"),
+            Token::WhileKw => write!(f, "WHILE"),
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
             Token::AssignOp => write!(f, "="),
@@ -49,6 +50,13 @@ impl fmt::Display for Token {
             Token::TimesOp => write!(f, "*"),
             Token::DivideOp => write!(f, "/"),
             Token::ModOp => write!(f, "%"),
+            Token::LessOp => write!(f, "<"),
+            Token::LessEqualOp => write!(f, "<="),
+            Token::GreaterOp => write!(f, ">"),
+            Token::GreaterEqualOp => write!(f, ">="),
+            Token::EqualOp => write!(f, "=="),
+            Token::NotEqualOp => write!(f, "!="),
+            Token::LogNotOp => write!(f, "!"),
             Token::Number(n) => write!(f, "{}", n),
             Token::Identifier(ref id) => write!(f, "{}", id),
         }

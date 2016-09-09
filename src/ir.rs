@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt;
 
-use ast::{Program, IfKind, Statement, Expression, BinOpKind, UnOpKind};
+use ast::{Program, Statement, Expression, BinOpKind, UnOpKind};
 
 // TODO: Delete all the clones (Maybe Cow<str> ??)
 
@@ -44,9 +44,7 @@ impl fmt::Display for BasicBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Branch {
     Jmp(String),
-    JmpP(Value, String, String),
-    JmpZ(Value, String, String),
-    JmpN(Value, String, String),
+    JmpT(Value, String, String),
     Ret,
 }
 
@@ -54,14 +52,8 @@ impl fmt::Display for Branch {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Branch::Jmp(ref dest) => write!(f, "jmp {}", dest),
-            Branch::JmpP(ref cond, ref true_label, ref false_label) => {
-                write!(f, "jmpP {}, {}, {}", cond, true_label, false_label)
-            }
-            Branch::JmpZ(ref cond, ref true_label, ref false_label) => {
-                write!(f, "jmpZ {}, {}, {}", cond, true_label, false_label)
-            }
-            Branch::JmpN(ref cond, ref true_label, ref false_label) => {
-                write!(f, "jmpN {}, {}, {}", cond, true_label, false_label)
+            Branch::JmpT(ref cond, ref true_label, ref false_label) => {
+                write!(f, "jmpT {}, {}, {}", cond, true_label, false_label)
             }
             Branch::Ret => write!(f, "return"),
         }
@@ -91,6 +83,13 @@ pub enum Instruction {
     Mul(String, Value, Value),
     Div(String, Value, Value),
     Mod(String, Value, Value),
+    CmpLess(String, Value, Value),
+    CmpLessEq(String, Value, Value),
+    CmpGreater(String, Value, Value),
+    CmpGreaterEq(String, Value, Value),
+    CmpEq(String, Value, Value),
+    CmpNotEq(String, Value, Value),
+    LogNot(String, Value),
     Negate(String, Value),
     Print(Value),
     Read(String),
@@ -115,6 +114,25 @@ impl fmt::Display for Instruction {
             Instruction::Mod(ref dest, ref lhs, ref rhs) => {
                 write!(f, "{} = mod {} {}", dest, lhs, rhs)
             }
+            Instruction::CmpLess(ref dest, ref lhs, ref rhs) => {
+                write!(f, "{} = < {} {}", dest, lhs, rhs)
+            }
+            Instruction::CmpLessEq(ref dest, ref lhs, ref rhs) => {
+                write!(f, "{} = <= {} {}", dest, lhs, rhs)
+            }
+            Instruction::CmpGreater(ref dest, ref lhs, ref rhs) => {
+                write!(f, "{} = > {} {}", dest, lhs, rhs)
+            }
+            Instruction::CmpGreaterEq(ref dest, ref lhs, ref rhs) => {
+                write!(f, "{} = >= {} {}", dest, lhs, rhs)
+            }
+            Instruction::CmpEq(ref dest, ref lhs, ref rhs) => {
+                write!(f, "{} = == {} {}", dest, lhs, rhs)
+            }
+            Instruction::CmpNotEq(ref dest, ref lhs, ref rhs) => {
+                write!(f, "{} = != {} {}", dest, lhs, rhs)
+            }
+            Instruction::LogNot(ref dest, ref value) => write!(f, "{} = ! {}", dest, value),
             Instruction::Negate(ref dest, ref value) => write!(f, "{} = neg {}", dest, value),
             Instruction::Print(ref value) => write!(f, "print {}", value),
             Instruction::Read(ref dest) => write!(f, "{} = read", dest),
@@ -204,7 +222,7 @@ impl Builder {
                          branch: Branch::Jmp(self.peek_label()),
                      }]
             }
-            Statement::If { kind, ref cond, ref if_stmts, ref else_stmts, .. } => {
+            Statement::If { ref cond, ref if_stmts, ref else_stmts, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, cond_name.clone());
                 let cond_label = self.new_label();
@@ -213,23 +231,9 @@ impl Builder {
                 let false_label = self.new_label();
                 let end_label = self.new_label();
 
-                let cond_branch = match kind {
-                    IfKind::Positive => {
-                        Branch::JmpP(Value::Var(cond_name.clone()),
-                                     true_label.clone(),
-                                     false_label.clone())
-                    }
-                    IfKind::Negative => {
-                        Branch::JmpN(Value::Var(cond_name.clone()),
-                                     true_label.clone(),
-                                     false_label.clone())
-                    }
-                    IfKind::Zero => {
-                        Branch::JmpZ(Value::Var(cond_name.clone()),
-                                     true_label.clone(),
-                                     false_label.clone())
-                    }
-                };
+                let cond_branch = Branch::JmpT(Value::Var(cond_name.clone()),
+                                               true_label.clone(),
+                                               false_label.clone());
 
                 let mut blocks = vec![BasicBlock {
                                           name: cond_label,
@@ -315,6 +319,44 @@ impl Builder {
                 });
                 blocks
             }
+            Statement::While { ref cond, ref stmts, .. } => {
+                let cond_name = self.new_temp();
+                let cond_inst = self.generate_expression(cond, cond_name.clone());
+                let cond_label = self.new_label();
+                let content_label = self.new_label();
+                let end_label = self.new_label();
+
+                let cond_branch = Branch::JmpT(Value::Var(cond_name.clone()),
+                                               content_label.clone(),
+                                               end_label.clone());
+
+                let mut blocks = vec![BasicBlock {
+                                          name: cond_label.clone(),
+                                          instructions: cond_inst,
+                                          branch: cond_branch,
+                                      },
+                                      BasicBlock {
+                                          name: content_label,
+                                          instructions: Vec::new(),
+                                          branch: Branch::Jmp(self.peek_label()),
+                                      }];
+
+                for stmt in stmts {
+                    blocks.extend(self.generate_statement(stmt));
+                }
+
+                blocks.push(BasicBlock {
+                    name: self.new_label(),
+                    instructions: Vec::new(),
+                    branch: Branch::Jmp(cond_label.clone()),
+                });
+                blocks.push(BasicBlock {
+                    name: end_label,
+                    instructions: Vec::new(),
+                    branch: Branch::Jmp(self.peek_label()),
+                });
+                blocks
+            }
             Statement::Break { .. } => {
                 vec![BasicBlock {
                          name: self.new_label(),
@@ -359,6 +401,24 @@ impl Builder {
                     BinOpKind::Mod => {
                         Instruction::Mod(name, Value::Var(lhs_name), Value::Var(rhs_name))
                     }
+                    BinOpKind::Less => {
+                        Instruction::CmpLess(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::LessEq => {
+                        Instruction::CmpLessEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::Greater => {
+                        Instruction::CmpGreater(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::GreaterEq => {
+                        Instruction::CmpGreaterEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::Equal => {
+                        Instruction::CmpEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
+                    BinOpKind::NotEqual => {
+                        Instruction::CmpNotEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                    }
                 });
                 instructions
             }
@@ -368,6 +428,7 @@ impl Builder {
                 instructions.push(match kind {
                     UnOpKind::Plus => Instruction::Assign(name, Value::Var(expr_name)),
                     UnOpKind::Minus => Instruction::Negate(name, Value::Var(expr_name)),
+                    UnOpKind::LogNot => Instruction::LogNot(name, Value::Var(expr_name)),
                 });
                 instructions
             }
