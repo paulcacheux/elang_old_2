@@ -1,15 +1,23 @@
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use ir::{BasicBlock, Branch, Instruction, Function, Value};
 
 pub fn optimize(func: &mut Function) {
-    propagate_jumps(&mut func.blocks);
-    for _ in 0..3 {
-        propagate_values(&mut func.blocks);
-        fold_constants(&mut func.blocks);
+    let mut still_work = true;
+    while still_work {
+        for _ in 0..2 {
+            propagate_values(&mut func.blocks);
+            still_work = fold_constants(&mut func.blocks);
+            remove_unused_vars(func);
+        }
     }
-    remove_unused_vars(func);
-    simplify_jumps(&mut func.blocks);
+
+    for _ in 0..2 {
+        propagate_jumps(&mut func.blocks);
+        simplify_jumps(&mut func.blocks);
+    }
     remove_unreachable_blocks(&mut func.blocks);
+    merge_adjacent_blocks(&mut func.blocks);
 }
 
 pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
@@ -52,6 +60,13 @@ pub fn simplify_jumps(blocks: &mut Vec<BasicBlock>) {
     for block in blocks {
         let new_branch = match block.branch {
             Branch::JmpT(_, ref d1, ref d2) if *d1 == *d2 => Branch::Jmp(d1.clone()),
+            Branch::JmpT(Value::Const(a), ref dtrue, ref dfalse) => {
+                if a != 0 {
+                    Branch::Jmp(dtrue.clone())
+                } else {
+                    Branch::Jmp(dfalse.clone())
+                }
+            }
             ref other_br => other_br.clone(),
         };
         block.branch = new_branch;
@@ -201,51 +216,106 @@ fn add_read_name(value: &Value, read_vars: &mut HashSet<String>) {
     }
 }
 
-pub fn fold_constants(blocks: &mut Vec<BasicBlock>) {
+pub fn fold_constants(blocks: &mut Vec<BasicBlock>) -> bool {
+    let mut has_changed = false;
     for block in blocks.iter_mut() {
         for instruction in &mut block.instructions {
             *instruction = match instruction.clone() {
                 Instruction::Add(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const(a + b))
                 }
                 Instruction::Sub(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const(a - b))
                 }
                 Instruction::Mul(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const(a * b))
                 }
                 Instruction::Div(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const(a / b))
                 }
                 Instruction::Mod(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const(a % b))
                 }
                 Instruction::CmpLess(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a < b) as i64))
                 }
                 Instruction::CmpLessEq(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a <= b) as i64))
                 }
                 Instruction::CmpGreater(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a > b) as i64))
                 }
                 Instruction::CmpGreaterEq(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a >= b) as i64))
                 }
                 Instruction::CmpEq(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a == b) as i64))
                 }
                 Instruction::CmpNotEq(dest, Value::Const(a), Value::Const(b)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a != b) as i64))
                 }
                 Instruction::LogNot(dest, Value::Const(a)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const((a == 0) as i64))
                 }
                 Instruction::Negate(dest, Value::Const(a)) => {
+                    has_changed = true;
                     Instruction::Assign(dest, Value::Const(-a))
                 }
                 _ => instruction.clone(),
-            }
+            };
         }
     }
+    has_changed
+}
+
+pub fn merge_adjacent_blocks(blocks: &mut Vec<BasicBlock>) {
+    let mut preds: HashMap<String, Vec<String>> = HashMap::new();
+    for block in blocks.iter() {
+        for target in can_reach(&block.branch) {
+            preds.entry(target).or_insert(Vec::new()).push(block.name.clone());
+        }
+    }
+
+    *blocks = blocks.iter()
+        .cloned()
+        .coalesce(|block1, block2| {
+            if let Branch::Jmp(ref b1_target) = block1.branch {
+                if *b1_target == block2.name {
+                    if preds.get(&block2.name)
+                        .map(|v| v.len() == 1 && v.contains(&block1.name))
+                        .unwrap_or(false) {
+
+                        for (_, block_preds) in preds.iter_mut() {
+                            for pred in block_preds.iter_mut() {
+                                if *pred == block2.name {
+                                    *pred = block1.name.clone();
+                                }
+                            }
+                        }
+
+                        let mut merged_instructions = block1.instructions;
+                        merged_instructions.extend(block2.instructions);
+                        return Ok(BasicBlock {
+                            name: block1.name,
+                            instructions: merged_instructions,
+                            branch: block2.branch,
+                        });
+                    }
+                }
+            }
+            Err((block1, block2))
+        })
+        .collect();
 }
