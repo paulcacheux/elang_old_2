@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use ir::{BasicBlock, Branch, Instruction, Function, Value};
 
 pub fn optimize(func: &mut Function) {
+    merge_adjacent_blocks(&mut func.blocks);
+
     let mut still_work = true;
     while still_work {
         for _ in 0..2 {
