@@ -1,6 +1,8 @@
 extern crate itertools;
+extern crate docopt;
+extern crate rustc_serialize;
 
-use std::env;
+use docopt::Docopt;
 
 mod source;
 mod token;
@@ -16,26 +18,46 @@ use source::Manager;
 use lexer::Lexer;
 use parser::Parser;
 
-fn usage(prog_path: &str) {
-    println!("Bitsy compiler");
-    println!("Usage: {} <input-file>", prog_path);
+const USAGE: &'static str = "
+Usage: bitsy [options] INPUT
+       bitsy --help
+
+Options:
+    -h, --help         Show this message.
+    --emit TYPE        Configure the output type.
+                       Valid values: ir, c.
+    -O                 Enable the optimizations.
+    -o OUTPUT          Configure the output path.
+";
+
+#[derive(RustcDecodable, Debug, Clone)]
+#[allow(non_snake_case)]
+struct Args {
+    arg_INPUT: String,
+    flag_emit: Option<EmitType>,
+    flag_O: bool,
+    flag_o: Option<String>,
+}
+
+#[derive(RustcDecodable, Debug, Clone, Copy, PartialEq, Eq)]
+enum EmitType {
+    Ir,
+    C,
+}
+
+impl EmitType {
+    fn to_extension(self) -> String {
+        String::from(match self {
+            EmitType::Ir => "ir",
+            EmitType::C => "c",
+        })
+    }
 }
 
 fn main() {
-    let mut args = env::args();
-    let default_prog_path = String::from("./bitsy");
-    let prog_path = args.next().unwrap_or(default_prog_path);
-    let file_path = match args.next() {
-        Some(path) => path,
-        None => {
-            usage(&prog_path);
-            return;
-        }
-    };
-    let default_output_path = String::from("a.c");
-    let output_path = args.next().unwrap_or(default_output_path);
+    let args: Args = Docopt::new(USAGE).and_then(|d| d.decode()).unwrap_or_else(|e| e.exit());
 
-    let source_manager = Manager::new(file_path).unwrap();
+    let source_manager = Manager::new(args.arg_INPUT).unwrap();
     let source_reader = source_manager.reader();
     let diagnostic_engine = source_manager.diagnostic_engine();
 
@@ -48,14 +70,17 @@ fn main() {
     };
 
     let mut main_func = ir::generate(&program);
-    if cfg!(debug_assertions) {
-        println!("non-optimized:\n{}", main_func);
-    }
-    ir_opt::optimize(&mut main_func);
-    if cfg!(debug_assertions) {
-        println!("optimized:\n{}", main_func);
+    if args.flag_O {
+        ir_opt::optimize(&mut main_func);
     }
 
-    let c_source = cgen::generate(main_func);
-    source::write_to_file(output_path, c_source).unwrap();
+    let emit_type = args.flag_emit.unwrap_or(EmitType::C);
+
+    let output_content = match emit_type {
+        EmitType::Ir => main_func.to_string(),
+        EmitType::C => cgen::generate(main_func),
+    };
+
+    let output_path = args.flag_o.unwrap_or(format!("output.{}", emit_type.to_extension()));
+    source::write_to_file(output_path, output_content).unwrap();
 }
