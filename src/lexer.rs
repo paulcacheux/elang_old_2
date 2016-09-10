@@ -53,6 +53,21 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
         }
     }
 
+    fn if_next(&mut self,
+               c: char,
+               tok_true: Token,
+               tok_false: Token,
+               bytepos: usize)
+               -> (Span, Token) {
+        match self.input.peek() {
+            Some(&(_, p)) if p == c => {
+                self.input.next();
+                (Span::new_with_len(bytepos, 2), tok_true)
+            }
+            _ => (Span::new_with_len(bytepos, 1), tok_false),
+        }
+    }
+
     fn take_while<P>(&mut self, first: char, predicate: P) -> String
         where P: Fn(char) -> bool
     {
@@ -85,38 +100,10 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                     let value = i64::from_str(&number).unwrap();
                     (Span::new_with_len(bytepos, number.len()), Token::Number(value))
                 }
-                '<' => {
-                    if let Some(&(_, '=')) = self.input.peek() {
-                        self.input.next();
-                        (Span::new_with_len(bytepos, 2), Token::LessEqualOp)
-                    } else {
-                        (Span::new_with_len(bytepos, 1), Token::LessOp)
-                    }
-                }
-                '>' => {
-                    if let Some(&(_, '=')) = self.input.peek() {
-                        self.input.next();
-                        (Span::new_with_len(bytepos, 2), Token::GreaterEqualOp)
-                    } else {
-                        (Span::new_with_len(bytepos, 1), Token::GreaterOp)
-                    }
-                }
-                '=' => {
-                    if let Some(&(_, '=')) = self.input.peek() {
-                        self.input.next();
-                        (Span::new_with_len(bytepos, 2), Token::EqualOp)
-                    } else {
-                        (Span::new_with_len(bytepos, 1), Token::AssignOp)
-                    }
-                }
-                '!' => {
-                    if let Some(&(_, '=')) = self.input.peek() {
-                        self.input.next();
-                        (Span::new_with_len(bytepos, 2), Token::NotEqualOp)
-                    } else {
-                        (Span::new_with_len(bytepos, 1), Token::LogNotOp)
-                    }
-                }
+                '<' => self.if_next('=', Token::LessEqualOp, Token::LessOp, bytepos),
+                '>' => self.if_next('=', Token::GreaterEqualOp, Token::GreaterOp, bytepos),
+                '=' => self.if_next('=', Token::EqualOp, Token::AssignOp, bytepos),
+                '!' => self.if_next('=', Token::NotEqualOp, Token::LogNotOp, bytepos),
                 '(' => (Span::new_with_len(bytepos, 1), Token::LParen),
                 ')' => (Span::new_with_len(bytepos, 1), Token::RParen),
                 '+' => (Span::new_with_len(bytepos, 1), Token::PlusOp),
