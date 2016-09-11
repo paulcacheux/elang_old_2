@@ -11,6 +11,7 @@ mod ast;
 mod parser;
 mod diagnostic;
 mod ir;
+mod ir_gen;
 mod ir_opt;
 mod cgen;
 
@@ -45,15 +46,6 @@ enum EmitType {
     C,
 }
 
-impl EmitType {
-    fn to_extension(self) -> String {
-        String::from(match self {
-            EmitType::Ir => "ir",
-            EmitType::C => "c",
-        })
-    }
-}
-
 fn main() {
     let args: Args = Docopt::new(USAGE).and_then(|d| d.decode()).unwrap_or_else(|e| e.exit());
 
@@ -69,7 +61,7 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let mut module = ir::generate(&program);
+    let mut module = ir_gen::generate(&program);
     if args.flag_O {
         ir_opt::optimize(&mut module);
     }
