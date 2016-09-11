@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
-use ir::{BasicBlock, Branch, Instruction, Function, Value};
+use ir::{BasicBlock, Branch, Instruction, Computation, Function, Value};
 
 pub fn optimize(func: &mut Function) {
     merge_adjacent_blocks(&mut func.blocks);
@@ -112,28 +112,32 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
         let mut mapping: HashMap<String, Value> = HashMap::new();
         for instruction in &mut block.instructions {
             match *instruction {
-                Instruction::Add(_, ref mut lhs, ref mut rhs) |
-                Instruction::Sub(_, ref mut lhs, ref mut rhs) |
-                Instruction::Mul(_, ref mut lhs, ref mut rhs) |
-                Instruction::Div(_, ref mut lhs, ref mut rhs) |
-                Instruction::Mod(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpLess(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpLessEq(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpGreater(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpGreaterEq(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpEq(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpNotEq(_, ref mut lhs, ref mut rhs) => {
-                    change_value(lhs, &mapping);
-                    change_value(rhs, &mapping);
+                Instruction::Assign(_, ref mut comp) |
+                Instruction::Print(ref mut comp) => {
+                    match *comp {
+                        Computation::Add(ref mut lhs, ref mut rhs) |
+                        Computation::Sub(ref mut lhs, ref mut rhs) |
+                        Computation::Mul(ref mut lhs, ref mut rhs) |
+                        Computation::Div(ref mut lhs, ref mut rhs) |
+                        Computation::Mod(ref mut lhs, ref mut rhs) |
+                        Computation::CmpLess(ref mut lhs, ref mut rhs) |
+                        Computation::CmpLessEq(ref mut lhs, ref mut rhs) |
+                        Computation::CmpGreater(ref mut lhs, ref mut rhs) |
+                        Computation::CmpGreaterEq(ref mut lhs, ref mut rhs) |
+                        Computation::CmpEq(ref mut lhs, ref mut rhs) |
+                        Computation::CmpNotEq(ref mut lhs, ref mut rhs) => {
+                            change_value(lhs, &mapping);
+                            change_value(rhs, &mapping);
+                        }
+                        Computation::Value(ref mut value) |
+                        Computation::LogNot(ref mut value) |
+                        Computation::Negate(ref mut value) => change_value(value, &mapping),
+                    }
                 }
-                Instruction::Assign(_, ref mut value) |
-                Instruction::LogNot(_, ref mut value) |
-                Instruction::Negate(_, ref mut value) |
-                Instruction::Print(ref mut value) => change_value(value, &mapping),
-                Instruction::Read(_) => {}
+                _ => {}
             }
 
-            if let Instruction::Assign(ref dest, ref value) = *instruction {
+            if let Instruction::Assign(ref dest, Computation::Value(ref value)) = *instruction {
                 mapping.insert(dest.clone(), value.clone());
             }
         }
@@ -160,25 +164,31 @@ pub fn remove_unused_vars(func: &mut Function) {
     for block in &mut func.blocks {
         for instruction in &mut block.instructions {
             match *instruction {
-                Instruction::Add(_, ref mut lhs, ref mut rhs) |
-                Instruction::Sub(_, ref mut lhs, ref mut rhs) |
-                Instruction::Mul(_, ref mut lhs, ref mut rhs) |
-                Instruction::Div(_, ref mut lhs, ref mut rhs) |
-                Instruction::Mod(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpLess(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpLessEq(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpGreater(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpGreaterEq(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpEq(_, ref mut lhs, ref mut rhs) |
-                Instruction::CmpNotEq(_, ref mut lhs, ref mut rhs) => {
-                    add_read_name(lhs, &mut read_vars);
-                    add_read_name(rhs, &mut read_vars);
+                Instruction::Assign(_, ref mut comp) |
+                Instruction::Print(ref mut comp) => {
+                    match *comp {
+                        Computation::Add(ref mut lhs, ref mut rhs) |
+                        Computation::Sub(ref mut lhs, ref mut rhs) |
+                        Computation::Mul(ref mut lhs, ref mut rhs) |
+                        Computation::Div(ref mut lhs, ref mut rhs) |
+                        Computation::Mod(ref mut lhs, ref mut rhs) |
+                        Computation::CmpLess(ref mut lhs, ref mut rhs) |
+                        Computation::CmpLessEq(ref mut lhs, ref mut rhs) |
+                        Computation::CmpGreater(ref mut lhs, ref mut rhs) |
+                        Computation::CmpGreaterEq(ref mut lhs, ref mut rhs) |
+                        Computation::CmpEq(ref mut lhs, ref mut rhs) |
+                        Computation::CmpNotEq(ref mut lhs, ref mut rhs) => {
+                            add_read_name(lhs, &mut read_vars);
+                            add_read_name(rhs, &mut read_vars);
+                        }
+                        Computation::Value(ref mut value) |
+                        Computation::LogNot(ref mut value) |
+                        Computation::Negate(ref mut value) => add_read_name(value, &mut read_vars),
+                    }
                 }
-                Instruction::Assign(_, ref mut value) |
-                Instruction::LogNot(_, ref mut value) |
-                Instruction::Negate(_, ref mut value) |
-                Instruction::Print(ref mut value) => add_read_name(value, &mut read_vars),
-                Instruction::Read(_) => {}
+                Instruction::Read(ref dest) => {
+                    read_vars.insert(dest.clone());
+                }
             }
         }
         match block.branch {
@@ -190,20 +200,7 @@ pub fn remove_unused_vars(func: &mut Function) {
     for block in &mut func.blocks {
         block.instructions.retain(|&ref instruction| {
             match *instruction {
-                Instruction::Assign(ref dest, _) |
-                Instruction::Add(ref dest, _, _) |
-                Instruction::Sub(ref dest, _, _) |
-                Instruction::Mul(ref dest, _, _) |
-                Instruction::Div(ref dest, _, _) |
-                Instruction::Mod(ref dest, _, _) |
-                Instruction::CmpLess(ref dest, _, _) |
-                Instruction::CmpLessEq(ref dest, _, _) |
-                Instruction::CmpGreater(ref dest, _, _) |
-                Instruction::CmpGreaterEq(ref dest, _, _) |
-                Instruction::CmpEq(ref dest, _, _) |
-                Instruction::CmpNotEq(ref dest, _, _) |
-                Instruction::LogNot(ref dest, _) |
-                Instruction::Negate(ref dest, _) => read_vars.contains(dest),
+                Instruction::Assign(ref dest, _) => read_vars.contains(dest),
                 _ => true,
             }
         });
@@ -222,61 +219,67 @@ pub fn fold_constants(blocks: &mut Vec<BasicBlock>) -> bool {
     let mut has_changed = false;
     for block in blocks.iter_mut() {
         for instruction in &mut block.instructions {
-            *instruction = match instruction.clone() {
-                Instruction::Add(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const(a + b))
+            match *instruction {
+                Instruction::Assign(_, ref mut comp) |
+                Instruction::Print(ref mut comp) => {
+                    *comp = match comp.clone() {
+                        Computation::Add(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const(a + b))
+                        }
+                        Computation::Sub(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const(a - b))
+                        }
+                        Computation::Mul(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const(a * b))
+                        }
+                        Computation::Div(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const(a / b))
+                        }
+                        Computation::Mod(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const(a % b))
+                        }
+                        Computation::CmpLess(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a < b) as i64))
+                        }
+                        Computation::CmpLessEq(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a <= b) as i64))
+                        }
+                        Computation::CmpGreater(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a > b) as i64))
+                        }
+                        Computation::CmpGreaterEq(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a >= b) as i64))
+                        }
+                        Computation::CmpEq(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a == b) as i64))
+                        }
+                        Computation::CmpNotEq(Value::Const(a), Value::Const(b)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a != b) as i64))
+                        }
+                        Computation::LogNot(Value::Const(a)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const((a == 0) as i64))
+                        }
+                        Computation::Negate(Value::Const(a)) => {
+                            has_changed = true;
+                            Computation::Value(Value::Const(-a))
+                        }
+                        _ => comp.clone(),
+                    };
                 }
-                Instruction::Sub(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const(a - b))
-                }
-                Instruction::Mul(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const(a * b))
-                }
-                Instruction::Div(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const(a / b))
-                }
-                Instruction::Mod(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const(a % b))
-                }
-                Instruction::CmpLess(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a < b) as i64))
-                }
-                Instruction::CmpLessEq(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a <= b) as i64))
-                }
-                Instruction::CmpGreater(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a > b) as i64))
-                }
-                Instruction::CmpGreaterEq(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a >= b) as i64))
-                }
-                Instruction::CmpEq(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a == b) as i64))
-                }
-                Instruction::CmpNotEq(dest, Value::Const(a), Value::Const(b)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a != b) as i64))
-                }
-                Instruction::LogNot(dest, Value::Const(a)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const((a == 0) as i64))
-                }
-                Instruction::Negate(dest, Value::Const(a)) => {
-                    has_changed = true;
-                    Instruction::Assign(dest, Value::Const(-a))
-                }
-                _ => instruction.clone(),
-            };
+                _ => {}
+            }
         }
     }
     has_changed

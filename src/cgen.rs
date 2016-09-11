@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use ir::{BasicBlock, Branch, Instruction, Function, Value};
+use ir::{BasicBlock, Branch, Instruction, Computation, Function, Value};
 
 pub fn generate(func: Function) -> String {
     let header = "#include <stdlib.h>\n#include <stdio.h>\n\nint main() {\n";
@@ -32,85 +32,55 @@ fn generate_block(block: BasicBlock) -> String {
 
 fn generate_instruction(instruction: &Instruction) -> String {
     match *instruction {
-        Instruction::Assign(ref dest, ref src) => {
-            format!("\t{} = {};\n", dest, generate_value(src))
+        Instruction::Assign(ref dest, ref comp) => {
+            format!("\t{} = {};\n", dest, generate_computation(comp))
         }
-        Instruction::Add(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = {} + {};\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::Sub(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = {} - {};\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::Mul(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = {} * {};\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::Div(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = {} / {};\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::Mod(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = {} % {};\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::CmpLess(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = ({} < {});\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::CmpLessEq(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = ({} <= {});\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::CmpGreater(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = ({} > {});\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::CmpGreaterEq(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = ({} >= {});\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::CmpEq(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = ({} == {});\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::CmpNotEq(ref dest, ref lhs, ref rhs) => {
-            format!("\t{} = ({} != {});\n",
-                    dest,
-                    generate_value(lhs),
-                    generate_value(rhs))
-        }
-        Instruction::LogNot(ref dest, ref value) => {
-            format!("\t{} = !({});\n", dest, generate_value(value))
-        }
-        Instruction::Negate(ref dest, ref value) => {
-            format!("\t{} = -({});\n", dest, generate_value(value))
-        }
-        Instruction::Print(ref value) => {
-            format!("\tprintf(\"%ld\\n\", {});\n", generate_value(value))
+        Instruction::Print(ref comp) => {
+            format!("\tprintf(\"%ld\\n\", {});\n", generate_computation(comp))
         }
         Instruction::Read(ref dest) => format!("\tscanf(\"%ld\", &{});\n", dest),
+    }
+}
+
+fn generate_computation(computation: &Computation) -> String {
+    match *computation {
+        Computation::Value(ref val) => format!("({})", generate_value(val)),
+        Computation::Add(ref lhs, ref rhs) => {
+            format!("({} + {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::Sub(ref lhs, ref rhs) => {
+            format!("({} - {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::Mul(ref lhs, ref rhs) => {
+            format!("({} * {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::Div(ref lhs, ref rhs) => {
+            format!("({} / {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::Mod(ref lhs, ref rhs) => {
+            format!("({} % {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::CmpLess(ref lhs, ref rhs) => {
+            format!("({} < {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::CmpLessEq(ref lhs, ref rhs) => {
+            format!("({} <= {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::CmpGreater(ref lhs, ref rhs) => {
+            format!("({} > {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::CmpGreaterEq(ref lhs, ref rhs) => {
+            format!("({} >= {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::CmpEq(ref lhs, ref rhs) => {
+            format!("({} == {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::CmpNotEq(ref lhs, ref rhs) => {
+            format!("({} != {})", generate_value(lhs), generate_value(rhs))
+        }
+        Computation::LogNot(ref value) => format!("(!({}))", generate_value(value)),
+        Computation::Negate(ref value) => format!("(-({}))", generate_value(value)),
+
     }
 }
 

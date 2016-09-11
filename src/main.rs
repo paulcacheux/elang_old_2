@@ -81,6 +81,10 @@ fn main() {
         EmitType::C => cgen::generate(main_func),
     };
 
-    let output_path = args.flag_o.unwrap_or(format!("output.{}", emit_type.to_extension()));
-    source::write_to_file(output_path, output_content).unwrap();
+    if let Some(output_path) = args.flag_o {
+        source::write_to_file(output_path, output_content).unwrap();
+    } else {
+        println!("{}", output_content);
+    }
+
 }

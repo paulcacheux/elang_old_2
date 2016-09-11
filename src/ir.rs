@@ -76,66 +76,57 @@ impl fmt::Display for Value {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Computation {
+    Value(Value),
+    Add(Value, Value),
+    Sub(Value, Value),
+    Mul(Value, Value),
+    Div(Value, Value),
+    Mod(Value, Value),
+    CmpLess(Value, Value),
+    CmpLessEq(Value, Value),
+    CmpGreater(Value, Value),
+    CmpGreaterEq(Value, Value),
+    CmpEq(Value, Value),
+    CmpNotEq(Value, Value),
+    LogNot(Value),
+    Negate(Value),
+}
+
+impl fmt::Display for Computation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Computation::Value(ref src) => write!(f, "{}", src),
+            Computation::Add(ref lhs, ref rhs) => write!(f, "add {} {}", lhs, rhs),
+            Computation::Sub(ref lhs, ref rhs) => write!(f, "sub {} {}", lhs, rhs),
+            Computation::Mul(ref lhs, ref rhs) => write!(f, "mul {} {}", lhs, rhs),
+            Computation::Div(ref lhs, ref rhs) => write!(f, "div {} {}", lhs, rhs),
+            Computation::Mod(ref lhs, ref rhs) => write!(f, "mod {} {}", lhs, rhs),
+            Computation::CmpLess(ref lhs, ref rhs) => write!(f, "< {} {}", lhs, rhs),
+            Computation::CmpLessEq(ref lhs, ref rhs) => write!(f, "<= {} {}", lhs, rhs),
+            Computation::CmpGreater(ref lhs, ref rhs) => write!(f, "> {} {}", lhs, rhs),
+            Computation::CmpGreaterEq(ref lhs, ref rhs) => write!(f, ">= {} {}", lhs, rhs),
+            Computation::CmpEq(ref lhs, ref rhs) => write!(f, "== {} {}", lhs, rhs),
+            Computation::CmpNotEq(ref lhs, ref rhs) => write!(f, "!= {} {}", lhs, rhs),
+            Computation::LogNot(ref value) => write!(f, "! {}", value),
+            Computation::Negate(ref value) => write!(f, "neg {}", value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
-    Assign(String, Value),
-    Add(String, Value, Value), // target = a + b
-    Sub(String, Value, Value),
-    Mul(String, Value, Value),
-    Div(String, Value, Value),
-    Mod(String, Value, Value),
-    CmpLess(String, Value, Value),
-    CmpLessEq(String, Value, Value),
-    CmpGreater(String, Value, Value),
-    CmpGreaterEq(String, Value, Value),
-    CmpEq(String, Value, Value),
-    CmpNotEq(String, Value, Value),
-    LogNot(String, Value),
-    Negate(String, Value),
-    Print(Value),
+    Assign(String, Computation),
+    Print(Computation),
     Read(String),
 }
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Instruction::Assign(ref dest, ref src) => write!(f, "{} = {}", dest, src),
-            Instruction::Add(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = add {} {}", dest, lhs, rhs)
-            }
-            Instruction::Sub(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = sub {} {}", dest, lhs, rhs)
-            }
-            Instruction::Mul(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = mul {} {}", dest, lhs, rhs)
-            }
-            Instruction::Div(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = div {} {}", dest, lhs, rhs)
-            }
-            Instruction::Mod(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = mod {} {}", dest, lhs, rhs)
-            }
-            Instruction::CmpLess(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = < {} {}", dest, lhs, rhs)
-            }
-            Instruction::CmpLessEq(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = <= {} {}", dest, lhs, rhs)
-            }
-            Instruction::CmpGreater(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = > {} {}", dest, lhs, rhs)
-            }
-            Instruction::CmpGreaterEq(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = >= {} {}", dest, lhs, rhs)
-            }
-            Instruction::CmpEq(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = == {} {}", dest, lhs, rhs)
-            }
-            Instruction::CmpNotEq(ref dest, ref lhs, ref rhs) => {
-                write!(f, "{} = != {} {}", dest, lhs, rhs)
-            }
-            Instruction::LogNot(ref dest, ref value) => write!(f, "{} = ! {}", dest, value),
-            Instruction::Negate(ref dest, ref value) => write!(f, "{} = neg {}", dest, value),
-            Instruction::Print(ref value) => write!(f, "print {}", value),
-            Instruction::Read(ref dest) => write!(f, "{} = read", dest),
+            Instruction::Assign(ref dest, ref comp) => write!(f, "{} = {}", dest, comp),
+            Instruction::Print(ref comp) => write!(f, "print {}", comp),
+            Instruction::Read(ref dest) => write!(f, "{} = read()", dest),
         }
     }
 }
@@ -207,7 +198,7 @@ impl Builder {
             Statement::Print { ref expr, .. } => {
                 let expr_name = self.new_temp();
                 let mut instructions = self.generate_expression(expr, expr_name.clone());
-                instructions.push(Instruction::Print(Value::Var(expr_name)));
+                instructions.push(Instruction::Print(Computation::Value(Value::Var(expr_name))));
 
                 vec![BasicBlock {
                          name: self.new_label(),
@@ -367,7 +358,8 @@ impl Builder {
             Statement::Assign { ref target_id, ref value, .. } => {
                 let value_name = self.new_temp();
                 let mut instructions = self.generate_expression(value, value_name.clone());
-                instructions.push(Instruction::Assign(target_id.clone(), Value::Var(value_name)));
+                instructions.push(Instruction::Assign(target_id.clone(),
+                                                      Computation::Value(Value::Var(value_name))));
 
                 vec![BasicBlock {
                          name: self.new_label(),
@@ -385,60 +377,66 @@ impl Builder {
                 let rhs_name = self.new_temp();
                 let mut instructions = self.generate_expression(lhs, lhs_name.clone());
                 instructions.extend(self.generate_expression(rhs, rhs_name.clone()));
-                instructions.push(match kind {
-                    BinOpKind::Add => {
-                        Instruction::Add(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                instructions.push(Instruction::Assign(name,
+                                                      match kind {
+                                                          BinOpKind::Add => {
+                                                              Computation::Add(Value::Var(lhs_name),
+                                                                               Value::Var(rhs_name))
+                                                          }
+                                                          BinOpKind::Sub => {
+                                                              Computation::Sub(Value::Var(lhs_name),
+                                                                               Value::Var(rhs_name))
+                                                          }
+                                                          BinOpKind::Mul => {
+                                                              Computation::Mul(Value::Var(lhs_name),
+                                                                               Value::Var(rhs_name))
+                                                          }
+                                                          BinOpKind::Div => {
+                                                              Computation::Div(Value::Var(lhs_name),
+                                                                               Value::Var(rhs_name))
+                                                          }
+                                                          BinOpKind::Mod => {
+                                                              Computation::Mod(Value::Var(lhs_name),
+                                                                               Value::Var(rhs_name))
+                                                          }
+                                                          BinOpKind::Less => {
+                        Computation::CmpLess(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
-                    BinOpKind::Sub => {
-                        Instruction::Sub(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                                                          BinOpKind::LessEq => {
+                        Computation::CmpLessEq(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
-                    BinOpKind::Mul => {
-                        Instruction::Mul(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                                                          BinOpKind::Greater => {
+                        Computation::CmpGreater(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
-                    BinOpKind::Div => {
-                        Instruction::Div(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                                                          BinOpKind::GreaterEq => {
+                        Computation::CmpGreaterEq(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
-                    BinOpKind::Mod => {
-                        Instruction::Mod(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                                                          BinOpKind::Equal => {
+                        Computation::CmpEq(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
-                    BinOpKind::Less => {
-                        Instruction::CmpLess(name, Value::Var(lhs_name), Value::Var(rhs_name))
+                                                          BinOpKind::NotEqual => {
+                        Computation::CmpNotEq(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
-                    BinOpKind::LessEq => {
-                        Instruction::CmpLessEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
-                    }
-                    BinOpKind::Greater => {
-                        Instruction::CmpGreater(name, Value::Var(lhs_name), Value::Var(rhs_name))
-                    }
-                    BinOpKind::GreaterEq => {
-                        Instruction::CmpGreaterEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
-                    }
-                    BinOpKind::Equal => {
-                        Instruction::CmpEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
-                    }
-                    BinOpKind::NotEqual => {
-                        Instruction::CmpNotEq(name, Value::Var(lhs_name), Value::Var(rhs_name))
-                    }
-                });
+                                                      }));
                 instructions
             }
             Expression::UnOp { kind, ref expr, .. } => {
                 let expr_name = self.new_temp();
                 let mut instructions = self.generate_expression(expr, expr_name.clone());
-                instructions.push(match kind {
-                    UnOpKind::Plus => Instruction::Assign(name, Value::Var(expr_name)),
-                    UnOpKind::Minus => Instruction::Negate(name, Value::Var(expr_name)),
-                    UnOpKind::LogNot => Instruction::LogNot(name, Value::Var(expr_name)),
-                });
+                instructions.push(Instruction::Assign(name, match kind {
+                    UnOpKind::Plus => Computation::Value(Value::Var(expr_name)),
+                    UnOpKind::Minus => Computation::Negate(Value::Var(expr_name)),
+                    UnOpKind::LogNot => Computation::LogNot(Value::Var(expr_name)),
+                }));
                 instructions
             }
             Expression::Paren { ref expr, .. } => self.generate_expression(expr, name),
             Expression::Identifier { ref id, .. } => {
                 self.vars.insert(id.clone());
-                vec![Instruction::Assign(name, Value::Var(id.clone()))]
+                vec![Instruction::Assign(name, Computation::Value(Value::Var(id.clone())))]
             }
             Expression::Number { value, .. } => {
-                vec![Instruction::Assign(name, Value::Const(value))]
+                vec![Instruction::Assign(name, Computation::Value(Value::Const(value)))]
             }
         }
     }
