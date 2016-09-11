@@ -1,25 +1,27 @@
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
-use ir::{BasicBlock, Branch, Instruction, Computation, Function, Value};
+use ir::{Module, Function, BasicBlock, Branch, Instruction, Computation, Value};
 
-pub fn optimize(func: &mut Function) {
-    merge_adjacent_blocks(&mut func.blocks);
+pub fn optimize(module: &mut Module) {
+    for func in &mut module.functions {
+        merge_adjacent_blocks(&mut func.blocks);
 
-    let mut still_work = true;
-    while still_work {
-        for _ in 0..2 {
-            propagate_values(&mut func.blocks);
-            still_work = fold_constants(&mut func.blocks);
-            remove_unused_vars(func);
+        let mut still_work = true;
+        while still_work {
+            for _ in 0..2 {
+                propagate_values(&mut func.blocks);
+                still_work = fold_constants(&mut func.blocks);
+                remove_unused_vars(func);
+            }
         }
-    }
 
-    for _ in 0..2 {
-        propagate_jumps(&mut func.blocks);
-        simplify_jumps(&mut func.blocks);
+        for _ in 0..2 {
+            propagate_jumps(&mut func.blocks);
+            simplify_jumps(&mut func.blocks);
+        }
+        remove_unreachable_blocks(&mut func.blocks);
+        merge_adjacent_blocks(&mut func.blocks);
     }
-    remove_unreachable_blocks(&mut func.blocks);
-    merge_adjacent_blocks(&mut func.blocks);
 }
 
 pub fn propagate_jumps(blocks: &mut Vec<BasicBlock>) {
@@ -103,7 +105,7 @@ fn can_reach(branch: &Branch) -> Vec<String> {
     match branch.clone() {
         Branch::Jmp(dest) => vec![dest],
         Branch::JmpT(_, dest1, dest2) => vec![dest1, dest2],
-        Branch::Ret => Vec::new(),
+        Branch::Ret(_) => Vec::new(),
     }
 }
 
@@ -115,6 +117,11 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
                 Instruction::Assign(_, ref mut comp) |
                 Instruction::Print(ref mut comp) => {
                     match *comp {
+                        Computation::FuncCall(_, ref mut param_values) => {
+                            for value in param_values {
+                                change_value(value, &mapping);
+                            }
+                        }
                         Computation::Add(ref mut lhs, ref mut rhs) |
                         Computation::Sub(ref mut lhs, ref mut rhs) |
                         Computation::Mul(ref mut lhs, ref mut rhs) |
@@ -144,6 +151,7 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
 
         match block.branch {
             Branch::JmpT(ref mut cond, _, _) => change_value(cond, &mapping),
+            Branch::Ret(ref mut val) => change_value(val, &mapping),
             _ => {}
         }
     }
@@ -167,6 +175,11 @@ pub fn remove_unused_vars(func: &mut Function) {
                 Instruction::Assign(_, ref mut comp) |
                 Instruction::Print(ref mut comp) => {
                     match *comp {
+                        Computation::FuncCall(_, ref param_values) => {
+                            for value in param_values {
+                                add_read_name(value, &mut read_vars);
+                            }
+                        }
                         Computation::Add(ref mut lhs, ref mut rhs) |
                         Computation::Sub(ref mut lhs, ref mut rhs) |
                         Computation::Mul(ref mut lhs, ref mut rhs) |
@@ -193,6 +206,7 @@ pub fn remove_unused_vars(func: &mut Function) {
         }
         match block.branch {
             Branch::JmpT(ref mut cond, _, _) => add_read_name(cond, &mut read_vars),
+            Branch::Ret(ref val) => add_read_name(val, &mut read_vars),
             _ => {}
         }
     }

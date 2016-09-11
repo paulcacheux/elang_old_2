@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 
-use ast::{Program, Statement, Expression, BinOpKind, UnOpKind};
+use ast::{Program, Function, Block, Statement, Expression, BinOpKind, UnOpKind};
 use source::Span;
 use token::Token;
 
@@ -47,17 +47,77 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         // program = BEGIN statement* END
 
-        let begin_span = expect!(self.lexer, Token::BeginKw, "BEGIN");
-
-        let mut statements = Vec::new();
-        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::EndKw) {
-            statements.push(try!(self.parse_statement()));
+        let mut funcs = Vec::new();
+        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::BeginKw) {
+            funcs.push(try!(self.parse_function_def()));
         }
 
-        let end_span = expect!(self.lexer, Token::EndKw, "END");
+        let block = try!(self.parse_block());
+        let span = Span::merge(funcs.first().map(|func| func.span).unwrap_or(block.span),
+                               block.span);
+
+        let main_func = Function {
+            name: String::from("main"),
+            params: Vec::new(),
+            span: block.span,
+            block: block,
+        };
 
         Ok(Program {
-            stmts: statements,
+            functions: funcs,
+            main_func: main_func,
+            span: span,
+        })
+    }
+
+    pub fn parse_function_def(&mut self) -> Result<Function, ParseError> {
+        let func_span = expect!(self.lexer, Token::FnKw, "FUNC");
+
+        let func_name = match self.lexer.next() {
+            Some((_, Token::Identifier(func_name))) => func_name,
+            other => return make_unexpected!("identifier", other),
+        };
+
+        expect!(self.lexer, Token::LParen, "(");
+        let mut param_names = Vec::new();
+        if self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::RParen) {
+            param_names.push(match self.lexer.next() {
+                Some((_, Token::Identifier(func_name))) => func_name,
+                other => return make_unexpected!("identifier", other),
+            });
+            while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::RParen) {
+                expect!(self.lexer, Token::Comma, ",");
+                param_names.push(match self.lexer.next() {
+                    Some((_, Token::Identifier(func_name))) => func_name,
+                    other => return make_unexpected!("identifier", other),
+                });
+            }
+        }
+        expect!(self.lexer, Token::RParen, ")");
+        let block = try!(self.parse_block());
+        let span = Span::merge(func_span, block.span);
+
+        Ok(Function {
+            name: func_name,
+            params: param_names,
+            block: block,
+            span: span,
+        })
+    }
+
+    pub fn parse_block(&mut self) -> Result<Block, ParseError> {
+        // block = BEGIN statement* END
+
+        let begin_span = expect!(self.lexer, Token::BeginKw, "BEGIN");
+
+        let mut stmts = Vec::new();
+        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::EndKw) {
+            stmts.push(try!(self.parse_statement()));
+        }
+        let end_span = expect!(self.lexer, Token::EndKw, "END");
+
+        Ok(Block {
+            stmts: stmts,
             span: Span::merge(begin_span, end_span),
         })
     }
@@ -305,9 +365,28 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let term = match self.lexer.next() {
             Some((span, Token::Identifier(id))) => {
-                Expression::Identifier {
-                    id: id,
-                    span: span,
+                if match_peek_token!(self.lexer, Token::LParen) {
+                    let mut params = Vec::new();
+                    if self.lexer.peek().is_some() &&
+                       !match_peek_token!(self.lexer, Token::RParen) {
+                        params.push(try!(self.parse_expression()));
+                        while self.lexer.peek().is_some() &&
+                              !match_peek_token!(self.lexer, Token::RParen) {
+                            expect!(self.lexer, Token::Comma, ",");
+                            params.push(try!(self.parse_expression()));
+                        }
+                    }
+                    let end_span = expect!(self.lexer, Token::RParen, ")");
+                    Expression::FuncCall {
+                        func_name: id,
+                        params: params,
+                        span: Span::merge(span, end_span),
+                    }
+                } else {
+                    Expression::Identifier {
+                        id: id,
+                        span: span,
+                    }
                 }
             }
             Some((span, Token::Number(value))) => {

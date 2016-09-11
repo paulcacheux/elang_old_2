@@ -2,13 +2,30 @@ use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt;
 
+use ast;
 use ast::{Program, Statement, Expression, BinOpKind, UnOpKind};
 
 // TODO: Delete all the clones (Maybe Cow<str> ??)
 
 #[derive(Debug, Clone)]
+pub struct Module {
+    pub functions: Vec<Function>,
+}
+
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "-----> Module:\n"));
+        for func in &self.functions {
+            try!(write!(f, "{}\n", func));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
+    pub params: Vec<String>,
     pub vars: HashSet<String>,
     pub blocks: Vec<BasicBlock>,
 }
@@ -16,6 +33,7 @@ pub struct Function {
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(write!(f, "{}() {{\n", self.name));
+        try!(write!(f, "params: {}\n", self.params.iter().join(", ")));
         try!(write!(f, "vars: {}\n", self.vars.iter().join(", ")));
         for block in &self.blocks {
             try!(write!(f, "{}\n", block));
@@ -45,7 +63,7 @@ impl fmt::Display for BasicBlock {
 pub enum Branch {
     Jmp(String),
     JmpT(Value, String, String),
-    Ret,
+    Ret(Value),
 }
 
 impl fmt::Display for Branch {
@@ -55,7 +73,7 @@ impl fmt::Display for Branch {
             Branch::JmpT(ref cond, ref true_label, ref false_label) => {
                 write!(f, "jmpT {}, {}, {}", cond, true_label, false_label)
             }
-            Branch::Ret => write!(f, "return"),
+            Branch::Ret(ref val) => write!(f, "return {}", val),
         }
     }
 }
@@ -78,6 +96,7 @@ impl fmt::Display for Value {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Computation {
     Value(Value),
+    FuncCall(String, Vec<Value>),
     Add(Value, Value),
     Sub(Value, Value),
     Mul(Value, Value),
@@ -97,6 +116,9 @@ impl fmt::Display for Computation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Computation::Value(ref src) => write!(f, "{}", src),
+            Computation::FuncCall(ref func, ref params) => {
+                write!(f, "{}({})", func, params.iter().join(", "))
+            }
             Computation::Add(ref lhs, ref rhs) => write!(f, "add {} {}", lhs, rhs),
             Computation::Sub(ref lhs, ref rhs) => write!(f, "sub {} {}", lhs, rhs),
             Computation::Mul(ref lhs, ref rhs) => write!(f, "mul {} {}", lhs, rhs),
@@ -131,14 +153,37 @@ impl fmt::Display for Instruction {
     }
 }
 
-pub fn generate(program: &Program) -> Function {
+pub fn generate(program: &Program) -> Module {
+    let mut functions = Vec::new();
+    for function in &program.functions {
+        functions.push(generate_function(&function))
+    }
+    functions.push(generate_function(&program.main_func));
+
+    Module { functions: functions }
+}
+
+fn generate_function(function: &ast::Function) -> Function {
     let mut builder = Builder::new();
-    let content_blocks = builder.generate_program(program);
+
+    let mut blocks = Vec::new();
+
+    for stmt in &function.block.stmts {
+        blocks.extend(builder.generate_statement(stmt));
+    }
+
+    let end_block = BasicBlock {
+        name: builder.new_label(),
+        instructions: Vec::new(),
+        branch: Branch::Ret(Value::Const(0)),
+    };
+    blocks.push(end_block);
 
     Function {
-        name: String::from("main"),
+        name: function.name.clone(),
+        params: function.params.clone(),
         vars: builder.vars,
-        blocks: content_blocks,
+        blocks: blocks,
     }
 }
 
@@ -174,23 +219,6 @@ impl Builder {
         let label = self.peek_label();
         self.label_counter += 1;
         label
-    }
-
-    fn generate_program(&mut self, program: &Program) -> Vec<BasicBlock> {
-        let mut blocks = Vec::new();
-
-        for stmt in &program.stmts {
-            blocks.extend(self.generate_statement(stmt));
-        }
-
-        let end_block = BasicBlock {
-            name: self.new_label(),
-            instructions: Vec::new(),
-            branch: Branch::Ret,
-        };
-        blocks.push(end_block);
-
-        blocks
     }
 
     fn generate_statement(&mut self, statement: &Statement) -> Vec<BasicBlock> {
@@ -431,6 +459,19 @@ impl Builder {
                 instructions
             }
             Expression::Paren { ref expr, .. } => self.generate_expression(expr, name),
+            Expression::FuncCall { ref func_name, ref params, .. } => {
+                let mut instructions = Vec::new();
+                let mut param_values = Vec::new();
+                for param in params {
+                    let param_name = self.new_temp();
+                    instructions.extend(self.generate_expression(param, param_name.clone()));
+                    param_values.push(Value::Var(param_name));
+                }
+                instructions.push(Instruction::Assign(name,
+                                                      Computation::FuncCall(func_name.clone(),
+                                                                            param_values)));
+                instructions
+            }
             Expression::Identifier { ref id, .. } => {
                 self.vars.insert(id.clone());
                 vec![Instruction::Assign(name, Computation::Value(Value::Var(id.clone())))]

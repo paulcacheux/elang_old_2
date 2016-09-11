@@ -2,6 +2,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
+    FnKw,
     BeginKw,
     EndKw,
     ReadKw,
@@ -26,6 +27,7 @@ pub enum Token {
     EqualOp,
     NotEqualOp,
     LogNotOp,
+    Comma,
     Number(i64),
     Identifier(String),
 }
@@ -33,6 +35,7 @@ pub enum Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Token::FnKw => write!(f, "FN"),
             Token::BeginKw => write!(f, "BEGIN"),
             Token::EndKw => write!(f, "END"),
             Token::ReadKw => write!(f, "READ"),
@@ -57,6 +60,7 @@ impl fmt::Display for Token {
             Token::EqualOp => write!(f, "=="),
             Token::NotEqualOp => write!(f, "!="),
             Token::LogNotOp => write!(f, "!"),
+            Token::Comma => write!(f, ","),
             Token::Number(n) => write!(f, "{}", n),
             Token::Identifier(ref id) => write!(f, "{}", id),
         }

@@ -8,6 +8,7 @@ use diagnostic::DiagnosticEngine;
 fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     let span = Span::new_with_len(bytepos, raw.len());
     let token = match raw.as_str() {
+        "FN" => Token::FnKw,
         "BEGIN" => Token::BeginKw,
         "END" => Token::EndKw,
         "READ" => Token::ReadKw,
@@ -111,6 +112,7 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                 '*' => (Span::new_with_len(bytepos, 1), Token::TimesOp),
                 '/' => (Span::new_with_len(bytepos, 1), Token::DivideOp),
                 '%' => (Span::new_with_len(bytepos, 1), Token::ModOp),
+                ',' => (Span::new_with_len(bytepos, 1), Token::Comma),
                 c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos),
             })
         } else {

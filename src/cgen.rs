@@ -1,11 +1,17 @@
 use itertools::Itertools;
 
-use ir::{BasicBlock, Branch, Instruction, Computation, Function, Value};
+use ir::{Module, Function, BasicBlock, Branch, Instruction, Computation, Value};
 
-pub fn generate(func: Function) -> String {
-    let header = "#include <stdlib.h>\n#include <stdio.h>\n\nint main() {\n";
-    let footer = "return 0;\n}\n";
+pub fn generate(module: Module) -> String {
+    let mut result = String::from("#include <stdlib.h>\n#include <stdio.h>\n\n");
 
+    for func in module.functions {
+        result.push_str(&generate_function(func));
+    }
+    result
+}
+
+fn generate_function(func: Function) -> String {
     let mut content = String::new();
     for block in func.blocks {
         content.push_str(&generate_block(block));
@@ -18,7 +24,12 @@ pub fn generate(func: Function) -> String {
     } else {
         String::new()
     };
-    format!("{}{}{}{}", header, init, content, footer)
+
+    format!("int {}({}) {{\n {}{} }}\n",
+            func.name,
+            func.params.iter().map(|param| format!("long {}", param)).join(", "),
+            init,
+            content)
 }
 
 fn generate_block(block: BasicBlock) -> String {
@@ -45,6 +56,11 @@ fn generate_instruction(instruction: &Instruction) -> String {
 fn generate_computation(computation: &Computation) -> String {
     match *computation {
         Computation::Value(ref val) => format!("({})", generate_value(val)),
+        Computation::FuncCall(ref func_name, ref params_value) => {
+            format!("{}({})",
+                    func_name,
+                    params_value.iter().map(|val| generate_value(val)).join(", "))
+        }
         Computation::Add(ref lhs, ref rhs) => {
             format!("({} + {})", generate_value(lhs), generate_value(rhs))
         }
@@ -100,6 +116,6 @@ fn generate_branch(branch: &Branch) -> String {
                     true_label,
                     false_label)
         }
-        Branch::Ret => String::from("\treturn 0;\n"),
+        Branch::Ret(ref val) => format!("\treturn {};\n", generate_value(val)),
     }
 }

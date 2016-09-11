@@ -1,5 +1,14 @@
-program = BEGIN statement* END
+program = function_def* BEGIN statement* END
         ;
+
+function_def = FN IDENTIFIER '(' param_list ')' block
+             ;
+
+param_list = [ IDENTIFIER { ',' IDENTIFIER } ]
+           ;
+
+block = BEGIN statement* END
+      ;
 
 statement = print-statement
           | read-statement
@@ -44,7 +53,11 @@ factor = term { (*|/|%) term }
        ;
 
 term = IDENTIFIER
+     | IDENTIFIER '(' expr_list ')'
      | NUMBER
      | [+|-|!] term
      | '(' expression ')'
      ;
+
+expr_list = [ expression { ',' expression } ]
+          ;

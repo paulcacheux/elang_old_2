@@ -69,16 +69,16 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let mut main_func = ir::generate(&program);
+    let mut module = ir::generate(&program);
     if args.flag_O {
-        ir_opt::optimize(&mut main_func);
+        ir_opt::optimize(&mut module);
     }
 
     let emit_type = args.flag_emit.unwrap_or(EmitType::C);
 
     let output_content = match emit_type {
-        EmitType::Ir => main_func.to_string(),
-        EmitType::C => cgen::generate(main_func),
+        EmitType::Ir => module.to_string(),
+        EmitType::C => cgen::generate(module),
     };
 
     if let Some(output_path) = args.flag_o {
