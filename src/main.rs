@@ -61,7 +61,7 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let mut module = ir_gen::generate(&program);
+    let mut module = ir_gen::generate(program);
     if args.flag_O {
         ir_opt::optimize(&mut module);
     }

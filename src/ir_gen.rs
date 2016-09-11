@@ -3,22 +3,22 @@ use std::collections::HashSet;
 use ast;
 use ir::{Module, Function, BasicBlock, Branch, Instruction, Computation, Value};
 
-pub fn generate(program: &ast::Program) -> Module {
+pub fn generate(program: ast::Program) -> Module {
     let mut functions = Vec::new();
-    for function in &program.functions {
-        functions.push(generate_function(&function))
+    for function in program.functions {
+        functions.push(generate_function(function))
     }
-    functions.push(generate_function(&program.main_func));
+    functions.push(generate_function(program.main_func));
 
     Module { functions: functions }
 }
 
-fn generate_function(function: &ast::Function) -> Function {
+fn generate_function(function: ast::Function) -> Function {
     let mut builder = Builder::new();
 
     let mut blocks = Vec::new();
 
-    for stmt in &function.block.stmts {
+    for stmt in function.block.stmts {
         blocks.extend(builder.generate_statement(stmt));
     }
 
@@ -30,8 +30,8 @@ fn generate_function(function: &ast::Function) -> Function {
     blocks.push(end_block);
 
     Function {
-        name: function.name.clone(),
-        params: function.params.clone(),
+        name: function.name,
+        params: function.params,
         vars: builder.vars,
         blocks: blocks,
     }
@@ -71,10 +71,10 @@ impl Builder {
         label
     }
 
-    fn generate_statement(&mut self, statement: &ast::Statement) -> Vec<BasicBlock> {
+    fn generate_statement(&mut self, statement: ast::Statement) -> Vec<BasicBlock> {
         use ast::Statement::*;
-        match *statement {
-            Print { ref expr, .. } => {
+        match statement {
+            Print { expr, .. } => {
                 let expr_name = self.new_temp();
                 let mut instructions = self.generate_expression(expr, expr_name.clone());
                 instructions.push(Instruction::Print(Computation::Value(Value::Var(expr_name))));
@@ -85,14 +85,14 @@ impl Builder {
                          branch: Branch::Jmp(self.peek_label()),
                      }]
             }
-            Read { ref target_id, .. } => {
+            Read { target_id, .. } => {
                 vec![BasicBlock {
                          name: self.new_label(),
                          instructions: vec![Instruction::Read(target_id.clone())],
                          branch: Branch::Jmp(self.peek_label()),
                      }]
             }
-            If { ref cond, ref if_stmts, ref else_stmts, .. } => {
+            If { cond, if_stmts, else_stmts, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, cond_name.clone());
                 let cond_label = self.new_label();
@@ -139,7 +139,7 @@ impl Builder {
                     branch: Branch::Jmp(self.peek_label()),
                 });
 
-                if let Some(ref else_stmts) = *else_stmts {
+                if let Some(else_stmts) = else_stmts {
                     for stmt in else_stmts {
                         blocks.extend(self.generate_statement(stmt));
                     }
@@ -159,7 +159,7 @@ impl Builder {
                 });
                 blocks
             }
-            Loop { ref stmts, .. } => {
+            Loop { stmts, .. } => {
                 let loop_start_label = self.new_label();
                 let loop_end_label = self.new_label();
 
@@ -189,7 +189,7 @@ impl Builder {
                 });
                 blocks
             }
-            While { ref cond, ref stmts, .. } => {
+            While { cond, stmts, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, cond_name.clone());
                 let cond_label = self.new_label();
@@ -234,7 +234,7 @@ impl Builder {
                          branch: Branch::Jmp(self.current_break_label.last().unwrap().clone()),
                      }]
             }
-            Assign { ref target_id, ref value, .. } => {
+            Assign { target_id, value, .. } => {
                 let value_name = self.new_temp();
                 let mut instructions = self.generate_expression(value, value_name.clone());
                 instructions.push(Instruction::Assign(target_id.clone(),
@@ -250,18 +250,18 @@ impl Builder {
     }
 
     fn generate_expression(&mut self,
-                           expression: &ast::Expression,
+                           expression: ast::Expression,
                            name: String)
                            -> Vec<Instruction> {
         use ast::Expression::*;
         use ast::BinOpKind;
         use ast::UnOpKind;
-        match *expression {
-            BinOp { kind, ref lhs, ref rhs, .. } => {
+        match expression {
+            BinOp { kind, lhs, rhs, .. } => {
                 let lhs_name = self.new_temp();
                 let rhs_name = self.new_temp();
-                let mut instructions = self.generate_expression(lhs, lhs_name.clone());
-                instructions.extend(self.generate_expression(rhs, rhs_name.clone()));
+                let mut instructions = self.generate_expression(*lhs, lhs_name.clone());
+                instructions.extend(self.generate_expression(*rhs, rhs_name.clone()));
                 let comp = match kind {
                     BinOpKind::Add => Computation::Add(Value::Var(lhs_name), Value::Var(rhs_name)),
                     BinOpKind::Sub => Computation::Sub(Value::Var(lhs_name), Value::Var(rhs_name)),
@@ -290,9 +290,9 @@ impl Builder {
                 instructions.push(Instruction::Assign(name, comp));
                 instructions
             }
-            UnOp { kind, ref expr, .. } => {
+            UnOp { kind, expr, .. } => {
                 let expr_name = self.new_temp();
-                let mut instructions = self.generate_expression(expr, expr_name.clone());
+                let mut instructions = self.generate_expression(*expr, expr_name.clone());
                 instructions.push(Instruction::Assign(name, match kind {
                     UnOpKind::Plus => Computation::Value(Value::Var(expr_name)),
                     UnOpKind::Minus => Computation::Negate(Value::Var(expr_name)),
@@ -300,8 +300,8 @@ impl Builder {
                 }));
                 instructions
             }
-            Paren { ref expr, .. } => self.generate_expression(expr, name),
-            FuncCall { ref func_name, ref params, .. } => {
+            Paren { expr, .. } => self.generate_expression(*expr, name),
+            FuncCall { func_name, params, .. } => {
                 let mut instructions = Vec::new();
                 let mut param_values = Vec::new();
                 for param in params {
@@ -314,7 +314,7 @@ impl Builder {
                                                                             param_values)));
                 instructions
             }
-            Identifier { ref id, .. } => {
+            Identifier { id, .. } => {
                 self.vars.insert(id.clone());
                 vec![Instruction::Assign(name, Computation::Value(Value::Var(id.clone())))]
             }
