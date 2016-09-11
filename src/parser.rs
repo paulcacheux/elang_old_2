@@ -366,20 +366,20 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let term = match self.lexer.next() {
             Some((span, Token::Identifier(id))) => {
                 if match_peek_token!(self.lexer, Token::LParen) {
-                    let mut params = Vec::new();
+                    let mut args = Vec::new();
                     if self.lexer.peek().is_some() &&
                        !match_peek_token!(self.lexer, Token::RParen) {
-                        params.push(try!(self.parse_expression()));
+                        args.push(try!(self.parse_expression()));
                         while self.lexer.peek().is_some() &&
                               !match_peek_token!(self.lexer, Token::RParen) {
                             expect!(self.lexer, Token::Comma, ",");
-                            params.push(try!(self.parse_expression()));
+                            args.push(try!(self.parse_expression()));
                         }
                     }
                     let end_span = expect!(self.lexer, Token::RParen, ")");
                     Expression::FuncCall {
                         func_name: id,
-                        params: params,
+                        args: args,
                         span: Span::merge(span, end_span),
                     }
                 } else {

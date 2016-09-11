@@ -1,53 +1,51 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
+use diagnostic::DiagnosticEngine;
 use ast;
 use ir::{Module, Function, BasicBlock, Branch, Instruction, Computation, Value};
 
-pub fn generate(program: ast::Program) -> Module {
+pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -> Module {
     let mut functions = Vec::new();
+    let mut builder = Builder::new(diag_engine);
     for function in program.functions {
-        functions.push(generate_function(function))
+        functions.push(builder.generate_function(function))
     }
-    functions.push(generate_function(program.main_func));
+    functions.push(builder.generate_function(program.main_func));
 
     Module { functions: functions }
 }
 
-fn generate_function(function: ast::Function) -> Function {
-    let mut builder = Builder::new();
+struct SymbolTable {
+    vars: HashSet<String>,
+    functions: HashMap<String, usize>,
+}
 
-    let mut blocks = Vec::new();
-
-    for stmt in function.block.stmts {
-        blocks.extend(builder.generate_statement(stmt));
+impl SymbolTable {
+    fn new() -> SymbolTable {
+        SymbolTable {
+            vars: HashSet::new(),
+            functions: HashMap::new(),
+        }
     }
 
-    let end_block = BasicBlock {
-        name: builder.new_label(),
-        instructions: Vec::new(),
-        branch: Branch::Ret(Value::Const(0)),
-    };
-    blocks.push(end_block);
-
-    Function {
-        name: function.name,
-        params: function.params,
-        vars: builder.vars,
-        blocks: blocks,
+    fn clear_vars(&mut self) {
+        self.vars.clear();
     }
 }
 
-pub struct Builder {
-    vars: HashSet<String>,
+struct Builder<'a> {
+    diag_engine: &'a DiagnosticEngine<'a>,
+    symbols: SymbolTable,
     current_break_label: Vec<String>,
     temp_counter: usize,
     label_counter: usize,
 }
 
-impl Builder {
-    pub fn new() -> Builder {
+impl<'a> Builder<'a> {
+    pub fn new(diag_engine: &'a DiagnosticEngine<'a>) -> Builder<'a> {
         Builder {
-            vars: HashSet::new(),
+            diag_engine: diag_engine,
+            symbols: SymbolTable::new(),
             current_break_label: vec![String::from("exit")],
             temp_counter: 0,
             label_counter: 0,
@@ -57,7 +55,7 @@ impl Builder {
     fn new_temp(&mut self) -> String {
         let temp = format!("_0temp{}", self.temp_counter);
         self.temp_counter += 1;
-        self.vars.insert(temp.clone());
+        self.symbols.vars.insert(temp.clone());
         temp
     }
 
@@ -69,6 +67,38 @@ impl Builder {
         let label = self.peek_label();
         self.label_counter += 1;
         label
+    }
+    fn generate_function(&mut self, function: ast::Function) -> Function {
+        if self.symbols.functions.contains_key(&function.name) {
+            self.diag_engine
+                .report_sema_error(format!("{} function is already defined", function.name),
+                                   function.span);
+        }
+
+        self.symbols.functions.insert(function.name.clone(), function.params.len());
+
+        let mut blocks = Vec::new();
+
+        for stmt in function.block.stmts {
+            blocks.extend(self.generate_statement(stmt));
+        }
+
+        let end_block = BasicBlock {
+            name: self.new_label(),
+            instructions: Vec::new(),
+            branch: Branch::Ret(Value::Const(0)),
+        };
+        blocks.push(end_block);
+
+        let func = Function {
+            name: function.name,
+            params: function.params,
+            vars: self.symbols.vars.clone(),
+            blocks: blocks,
+        };
+
+        self.symbols.clear_vars();
+        func
     }
 
     fn generate_statement(&mut self, statement: ast::Statement) -> Vec<BasicBlock> {
@@ -301,21 +331,45 @@ impl Builder {
                 instructions
             }
             Paren { expr, .. } => self.generate_expression(*expr, name),
-            FuncCall { func_name, params, .. } => {
+            FuncCall { func_name, args, span } => {
+                if !self.symbols.functions.contains_key(&func_name) {
+                    self.diag_engine
+                        .report_sema_error(format!("{} function is actually not defined",
+                                                   func_name),
+                                           span);
+                }
+
+                let expected_len = *self.symbols.functions.get(&func_name).unwrap();
+                if expected_len != args.len() {
+                    self.diag_engine
+                        .report_sema_error(format!("{} function expect {} arguments, you gave {}",
+                                                   func_name,
+                                                   expected_len,
+                                                   args.len()),
+                                           span);
+                }
+
                 let mut instructions = Vec::new();
-                let mut param_values = Vec::new();
-                for param in params {
-                    let param_name = self.new_temp();
-                    instructions.extend(self.generate_expression(param, param_name.clone()));
-                    param_values.push(Value::Var(param_name));
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    let arg_name = self.new_temp();
+                    instructions.extend(self.generate_expression(arg, arg_name.clone()));
+                    arg_values.push(Value::Var(arg_name));
                 }
                 instructions.push(Instruction::Assign(name,
                                                       Computation::FuncCall(func_name.clone(),
-                                                                            param_values)));
+                                                                            arg_values)));
                 instructions
             }
-            Identifier { id, .. } => {
-                self.vars.insert(id.clone());
+            Identifier { id, span } => {
+                if !self.symbols.vars.contains(&id) {
+                    self.diag_engine
+                        .report_sema_warning(format!("{} is referenced before assignment, it \
+                                                      will default to 0",
+                                                     id),
+                                             span);
+                }
+                self.symbols.vars.insert(id.clone());
                 vec![Instruction::Assign(name, Computation::Value(Value::Var(id.clone())))]
             }
             Number { value, .. } => {

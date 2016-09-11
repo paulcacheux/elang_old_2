@@ -84,7 +84,7 @@ pub enum Expression {
     Paren { expr: Box<Expression>, span: Span },
     FuncCall {
         func_name: String,
-        params: Vec<Expression>,
+        args: Vec<Expression>,
         span: Span,
     },
     Identifier { id: String, span: Span },

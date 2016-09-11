@@ -29,6 +29,7 @@ Options:
                        Valid values: ir, c.
     -O                 Enable the optimizations.
     -o OUTPUT          Configure the output path.
+    -W                 Enable warnings.
 ";
 
 #[derive(RustcDecodable, Debug, Clone)]
@@ -38,6 +39,7 @@ struct Args {
     flag_emit: Option<EmitType>,
     flag_O: bool,
     flag_o: Option<String>,
+    flag_W: bool,
 }
 
 #[derive(RustcDecodable, Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +51,7 @@ enum EmitType {
 fn main() {
     let args: Args = Docopt::new(USAGE).and_then(|d| d.decode()).unwrap_or_else(|e| e.exit());
 
-    let source_manager = Manager::new(args.arg_INPUT).unwrap();
+    let source_manager = Manager::new(args.arg_INPUT, args.flag_W).unwrap();
     let source_reader = source_manager.reader();
     let diagnostic_engine = source_manager.diagnostic_engine();
 
@@ -61,7 +63,7 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let mut module = ir_gen::generate(program);
+    let mut module = ir_gen::generate(program, &diagnostic_engine);
     if args.flag_O {
         ir_opt::optimize(&mut module);
     }

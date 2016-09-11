@@ -1,20 +1,28 @@
 use std::process;
 use std::fmt;
+use std::io::Write;
 
 use source::Span;
 use parser::ParseError;
 
+macro_rules! println_stderr(
+    ($($arg:tt)*) => { {
+        writeln!(&mut ::std::io::stderr(), $($arg)*).expect("failed printing to stderr");
+    } }
+);
+
 #[derive(Debug, Clone)]
 pub struct DiagnosticEngine<'a> {
     pub source: &'a str,
+    pub warning_activated: bool,
 }
 
 impl<'a> DiagnosticEngine<'a> {
     pub fn report_lex_error(&self, description: String, bytepos: usize) -> ! {
         let span = Span::new_with_len(bytepos, 1);
-        let error = RenderError::from_span(span, description, self.source);
+        let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
 
-        println!("{}", error);
+        println_stderr!("{}", error);
         process::exit(-1);
     }
 
@@ -26,9 +34,25 @@ impl<'a> DiagnosticEngine<'a> {
             }
         };
 
-        let error = RenderError::from_span(span, description, self.source);
+        let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
 
-        println!("{}", error);
+        println_stderr!("{}", error);
+        process::exit(-1);
+    }
+
+    pub fn report_sema_warning(&self, description: String, span: Span) {
+        if self.warning_activated {
+            let error =
+                RenderError::from_span(span, description, self.source, ErrorImportance::Warning);
+
+            println_stderr!("{}", error);
+        }
+    }
+
+    pub fn report_sema_error(&self, description: String, span: Span) {
+        let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
+
+        println_stderr!("{}", error);
         process::exit(-1);
     }
 }
@@ -50,14 +74,25 @@ impl fmt::Display for ErrorLine {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ErrorImportance {
+    Error,
+    Warning,
+}
+
 #[derive(Debug, Clone)]
 struct RenderError {
+    pub importance: ErrorImportance,
     pub description: String,
     pub lines: Vec<ErrorLine>,
 }
 
 impl RenderError {
-    pub fn from_span(span: Span, description: String, source: &str) -> RenderError {
+    pub fn from_span(span: Span,
+                     description: String,
+                     source: &str,
+                     importance: ErrorImportance)
+                     -> RenderError {
         let arrow: String = source.char_indices()
             .map(|(pos, c)| {
                 if c == '\n' {
@@ -87,6 +122,7 @@ impl RenderError {
             .collect();
 
         RenderError {
+            importance: importance,
             description: description,
             lines: lines,
         }
@@ -95,7 +131,12 @@ impl RenderError {
 
 impl fmt::Display for RenderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "Error: {}\n", self.description));
+        let importance = match self.importance {
+            ErrorImportance::Error => "Error",
+            ErrorImportance::Warning => "Warning",
+        };
+
+        try!(write!(f, "{}: {}\n", importance, self.description));
         for line in &self.lines {
             try!(line.fmt(f));
         }
