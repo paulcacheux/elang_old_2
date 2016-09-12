@@ -56,7 +56,7 @@ impl<'a> DiagnosticEngine<'a> {
         }
     }
 
-    pub fn report_sema_error(&self, description: String, span: Span) {
+    pub fn report_sema_error(&self, description: String, span: Span) -> ! {
         let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
 
         println_stderr!("{}", error);

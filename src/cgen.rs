@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use ir::{Module, Function, BasicBlock, Branch, Instruction, Computation, Value};
+use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Computation, Value};
 
 pub fn generate(module: Module) -> String {
     let mut result = String::from("#include <stdlib.h>\n#include <stdio.h>\n\n");
@@ -33,12 +33,16 @@ fn generate_function(func: Function) -> String {
 }
 
 fn generate_block(block: BasicBlock) -> String {
-    let mut result = format!("{}:\n", block.name);
+    let mut result = format!("{}:\n", generate_basic_block_id(block.id));
     for instruction in block.instructions {
         result.push_str(&generate_instruction(&instruction));
     }
     result.push_str(&generate_branch(&block.branch));
     result
+}
+
+fn generate_basic_block_id(id: BasicBlockId) -> String {
+    format!("label{}", id.0)
 }
 
 fn generate_instruction(instruction: &Instruction) -> String {
@@ -109,12 +113,12 @@ fn generate_value(value: &Value) -> String {
 
 fn generate_branch(branch: &Branch) -> String {
     match *branch {
-        Branch::Jmp(ref dest) => format!("\tgoto {};\n", dest),
-        Branch::JmpT(ref cond, ref true_label, ref false_label) => {
+        Branch::Jmp(dest) => format!("\tgoto {};\n", generate_basic_block_id(dest)),
+        Branch::JmpT(ref cond, true_blockid, false_blockid) => {
             format!("\tif ({}) {{ goto {}; }} else {{ goto {}; }}\n",
                     generate_value(cond),
-                    true_label,
-                    false_label)
+                    generate_basic_block_id(true_blockid),
+                    generate_basic_block_id(false_blockid))
         }
         Branch::Ret(ref val) => format!("\treturn {};\n", generate_value(val)),
     }

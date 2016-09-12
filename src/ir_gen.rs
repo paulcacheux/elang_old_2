@@ -2,7 +2,7 @@ use std::collections::{HashSet, HashMap};
 
 use diagnostic::DiagnosticEngine;
 use ast;
-use ir::{Module, Function, BasicBlock, Branch, Instruction, Computation, Value};
+use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Computation, Value};
 
 pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -> Module {
     let mut functions = Vec::new();
@@ -36,9 +36,9 @@ impl SymbolTable {
 struct Builder<'a> {
     diag_engine: &'a DiagnosticEngine<'a>,
     symbols: SymbolTable,
-    current_break_label: Vec<String>,
+    current_break_blockid: Vec<BasicBlockId>,
     temp_counter: usize,
-    label_counter: usize,
+    blockid_counter: usize,
 }
 
 impl<'a> Builder<'a> {
@@ -46,9 +46,9 @@ impl<'a> Builder<'a> {
         Builder {
             diag_engine: diag_engine,
             symbols: SymbolTable::new(),
-            current_break_label: vec![String::from("exit")],
+            current_break_blockid: Vec::new(),
             temp_counter: 0,
-            label_counter: 0,
+            blockid_counter: 0,
         }
     }
 
@@ -59,14 +59,14 @@ impl<'a> Builder<'a> {
         temp
     }
 
-    fn peek_label(&self) -> String {
-        format!("label{}", self.label_counter)
+    fn peek_blockid(&self) -> BasicBlockId {
+        BasicBlockId(self.blockid_counter)
     }
 
-    fn new_label(&mut self) -> String {
-        let label = self.peek_label();
-        self.label_counter += 1;
-        label
+    fn new_blockid(&mut self) -> BasicBlockId {
+        let blockid = self.peek_blockid();
+        self.blockid_counter += 1;
+        blockid
     }
     fn generate_function(&mut self, function: ast::Function) -> Function {
         if self.symbols.functions.contains_key(&function.name) {
@@ -84,7 +84,7 @@ impl<'a> Builder<'a> {
         }
 
         let end_block = BasicBlock {
-            name: self.new_label(),
+            id: self.new_blockid(),
             instructions: Vec::new(),
             branch: Branch::Ret(Value::Const(0)),
         };
@@ -110,40 +110,39 @@ impl<'a> Builder<'a> {
                 instructions.push(Instruction::Print(Computation::Value(Value::Var(expr_name))));
 
                 vec![BasicBlock {
-                         name: self.new_label(),
+                         id: self.new_blockid(),
                          instructions: instructions,
-                         branch: Branch::Jmp(self.peek_label()),
+                         branch: Branch::Jmp(self.peek_blockid()),
                      }]
             }
             Read { target_id, .. } => {
                 vec![BasicBlock {
-                         name: self.new_label(),
+                         id: self.new_blockid(),
                          instructions: vec![Instruction::Read(target_id.clone())],
-                         branch: Branch::Jmp(self.peek_label()),
+                         branch: Branch::Jmp(self.peek_blockid()),
                      }]
             }
             If { cond, if_stmts, else_stmts, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, cond_name.clone());
-                let cond_label = self.new_label();
-                let true_label = self.new_label();
-                let skip_false_label = self.new_label();
-                let false_label = self.new_label();
-                let end_label = self.new_label();
+                let cond_blockid = self.new_blockid();
+                let true_blockid = self.new_blockid();
+                let skip_false_blockid = self.new_blockid();
+                let false_blockid = self.new_blockid();
+                let end_blockid = self.new_blockid();
 
-                let cond_branch = Branch::JmpT(Value::Var(cond_name.clone()),
-                                               true_label.clone(),
-                                               false_label.clone());
+                let cond_branch =
+                    Branch::JmpT(Value::Var(cond_name.clone()), true_blockid, false_blockid);
 
                 let mut blocks = vec![BasicBlock {
-                                          name: cond_label,
+                                          id: cond_blockid,
                                           instructions: cond_inst,
                                           branch: cond_branch,
                                       },
                                       BasicBlock {
-                                          name: true_label,
+                                          id: true_blockid,
                                           instructions: Vec::new(),
-                                          branch: Branch::Jmp(self.peek_label()),
+                                          branch: Branch::Jmp(self.peek_blockid()),
                                       }];
 
                 for stmt in if_stmts {
@@ -152,21 +151,21 @@ impl<'a> Builder<'a> {
 
                 // linker
                 blocks.push(BasicBlock {
-                    name: self.new_label(),
+                    id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(skip_false_label.clone()),
+                    branch: Branch::Jmp(skip_false_blockid),
                 });
 
                 blocks.push(BasicBlock {
-                    name: skip_false_label,
+                    id: skip_false_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(end_label.clone()),
+                    branch: Branch::Jmp(end_blockid),
                 });
 
                 blocks.push(BasicBlock {
-                    name: false_label,
+                    id: false_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_label()),
+                    branch: Branch::Jmp(self.peek_blockid()),
                 });
 
                 if let Some(else_stmts) = else_stmts {
@@ -177,92 +176,98 @@ impl<'a> Builder<'a> {
 
                 // to link the "peek label" of the last statement with the end_label
                 blocks.push(BasicBlock {
-                    name: self.new_label(),
+                    id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(end_label.clone()),
+                    branch: Branch::Jmp(end_blockid),
                 });
 
                 blocks.push(BasicBlock {
-                    name: end_label,
+                    id: end_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_label()),
+                    branch: Branch::Jmp(self.peek_blockid()),
                 });
                 blocks
             }
             Loop { stmts, .. } => {
-                let loop_start_label = self.new_label();
-                let loop_end_label = self.new_label();
+                let loop_start_blockid = self.new_blockid();
+                let loop_end_blockid = self.new_blockid();
 
                 let mut blocks = vec![BasicBlock {
-                                          name: loop_start_label.clone(),
+                                          id: loop_start_blockid,
                                           instructions: Vec::new(),
-                                          branch: Branch::Jmp(self.peek_label()),
+                                          branch: Branch::Jmp(self.peek_blockid()),
                                       }];
 
-                self.current_break_label.push(loop_end_label.clone());
+                self.current_break_blockid.push(loop_end_blockid);
                 for stmt in stmts {
                     blocks.extend(self.generate_statement(stmt));
                 }
-                self.current_break_label.pop();
+                self.current_break_blockid.pop();
 
                 // loop reloader
                 blocks.push(BasicBlock {
-                    name: self.new_label(),
+                    id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(loop_start_label.clone()),
+                    branch: Branch::Jmp(loop_start_blockid),
                 });
 
                 blocks.push(BasicBlock {
-                    name: loop_end_label,
+                    id: loop_end_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_label()),
+                    branch: Branch::Jmp(self.peek_blockid()),
                 });
                 blocks
             }
             While { cond, stmts, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, cond_name.clone());
-                let cond_label = self.new_label();
-                let content_label = self.new_label();
-                let end_label = self.new_label();
+                let cond_blockid = self.new_blockid();
+                let content_blockid = self.new_blockid();
+                let end_blockid = self.new_blockid();
 
-                let cond_branch = Branch::JmpT(Value::Var(cond_name.clone()),
-                                               content_label.clone(),
-                                               end_label.clone());
+                let cond_branch =
+                    Branch::JmpT(Value::Var(cond_name.clone()), content_blockid, end_blockid);
 
                 let mut blocks = vec![BasicBlock {
-                                          name: cond_label.clone(),
+                                          id: cond_blockid,
                                           instructions: cond_inst,
                                           branch: cond_branch,
                                       },
                                       BasicBlock {
-                                          name: content_label,
+                                          id: content_blockid,
                                           instructions: Vec::new(),
-                                          branch: Branch::Jmp(self.peek_label()),
+                                          branch: Branch::Jmp(self.peek_blockid()),
                                       }];
 
+                self.current_break_blockid.push(end_blockid);
                 for stmt in stmts {
                     blocks.extend(self.generate_statement(stmt));
                 }
+                self.current_break_blockid.pop();
 
                 blocks.push(BasicBlock {
-                    name: self.new_label(),
+                    id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(cond_label.clone()),
+                    branch: Branch::Jmp(cond_blockid),
                 });
                 blocks.push(BasicBlock {
-                    name: end_label,
+                    id: end_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_label()),
+                    branch: Branch::Jmp(self.peek_blockid()),
                 });
                 blocks
             }
-            Break { .. } => {
-                vec![BasicBlock {
-                         name: self.new_label(),
-                         instructions: Vec::new(),
-                         branch: Branch::Jmp(self.current_break_label.last().unwrap().clone()),
-                     }]
+            Break { span } => {
+                if let Some(&break_dest) = self.current_break_blockid.last() {
+                    vec![BasicBlock {
+                             id: self.new_blockid(),
+                             instructions: Vec::new(),
+                             branch: Branch::Jmp(break_dest),
+                         }]
+                } else {
+                    self.diag_engine
+                        .report_sema_error("Break outside of a loop/while".to_string(), span);
+                }
             }
             Assign { target_id, value, .. } => {
                 let value_name = self.new_temp();
@@ -271,9 +276,9 @@ impl<'a> Builder<'a> {
                                                       Computation::Value(Value::Var(value_name))));
 
                 vec![BasicBlock {
-                         name: self.new_label(),
+                         id: self.new_blockid(),
                          instructions: instructions,
-                         branch: Branch::Jmp(self.peek_label()),
+                         branch: Branch::Jmp(self.peek_blockid()),
                      }]
             }
         }

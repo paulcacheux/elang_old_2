@@ -40,16 +40,25 @@ impl fmt::Display for Function {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BasicBlockId(pub usize);
+
+impl fmt::Display for BasicBlockId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "@{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BasicBlock {
-    pub name: String,
+    pub id: BasicBlockId,
     pub instructions: Vec<Instruction>,
     pub branch: Branch,
 }
 
 impl fmt::Display for BasicBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{}:\n", self.name));
+        try!(write!(f, "{}:\n", self.id));
         for inst in &self.instructions {
             try!(write!(f, "\t{}\n", inst));
         }
@@ -59,8 +68,8 @@ impl fmt::Display for BasicBlock {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Branch {
-    Jmp(String),
-    JmpT(Value, String, String),
+    Jmp(BasicBlockId),
+    JmpT(Value, BasicBlockId, BasicBlockId),
     Ret(Value),
 }
 

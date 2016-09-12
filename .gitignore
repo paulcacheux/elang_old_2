@@ -1,3 +1,5 @@
 target
 bitsyspec
 run_tests.sh
+._*
+src/._*
