@@ -18,6 +18,13 @@ pub struct DiagnosticEngine<'a> {
 }
 
 impl<'a> DiagnosticEngine<'a> {
+    pub fn new(source: &'a str, warning_activated: bool) -> DiagnosticEngine {
+        DiagnosticEngine {
+            source: source,
+            warning_activated: warning_activated,
+        }
+    }
+
     pub fn report_lex_error(&self, description: String, bytepos: usize) -> ! {
         let span = Span::new_with_len(bytepos, 1);
         let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
@@ -131,9 +138,11 @@ impl RenderError {
 
 impl fmt::Display for RenderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let light_red = "\x1b[91m";
+        let clear = "\x1b[0m";
         let importance = match self.importance {
-            ErrorImportance::Error => "Error",
-            ErrorImportance::Warning => "Warning",
+            ErrorImportance::Error => format!("{}Error{}", light_red, clear),
+            ErrorImportance::Warning => format!("{}Warning{}", light_red, clear),
         };
 
         try!(write!(f, "{}: {}\n", importance, self.description));

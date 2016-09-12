@@ -51,9 +51,9 @@ enum EmitType {
 fn main() {
     let args: Args = Docopt::new(USAGE).and_then(|d| d.decode()).unwrap_or_else(|e| e.exit());
 
-    let source_manager = Manager::new(args.arg_INPUT, args.flag_W).unwrap();
+    let source_manager = Manager::new(args.arg_INPUT).unwrap();
     let source_reader = source_manager.reader();
-    let diagnostic_engine = source_manager.diagnostic_engine();
+    let diagnostic_engine = diagnostic::DiagnosticEngine::new(&source_manager.source, args.flag_W);
 
     let lexer = Lexer::new(source_reader, &diagnostic_engine);
     let mut parser = Parser::new(lexer);
