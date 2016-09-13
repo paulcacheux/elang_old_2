@@ -119,7 +119,7 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
         for instruction in &mut block.instructions {
             match *instruction {
                 Instruction::Assign(_, ref mut comp) |
-                Instruction::Print(ref mut comp) => {
+                Instruction::Compute(ref mut comp) => {
                     match *comp {
                         Computation::FuncCall(_, ref mut param_values) => {
                             for value in param_values {
@@ -145,7 +145,6 @@ pub fn propagate_values(blocks: &mut Vec<BasicBlock>) {
                         Computation::Negate(ref mut value) => change_value(value, &mapping),
                     }
                 }
-                _ => {}
             }
 
             if let Instruction::Assign(ref dest, Computation::Value(ref value)) = *instruction {
@@ -177,7 +176,7 @@ pub fn remove_unused_vars(func: &mut Function) {
         for instruction in &block.instructions {
             match *instruction {
                 Instruction::Assign(_, ref comp) |
-                Instruction::Print(ref comp) => {
+                Instruction::Compute(ref comp) => {
                     match *comp {
                         Computation::FuncCall(_, ref param_values) => {
                             for value in param_values {
@@ -203,9 +202,6 @@ pub fn remove_unused_vars(func: &mut Function) {
                         Computation::Negate(ref value) => add_read_name(value, &mut read_vars),
                     }
                 }
-                Instruction::Read(ref dest) => {
-                    read_vars.insert(dest.clone());
-                }
             }
         }
         match block.branch {
@@ -219,7 +215,9 @@ pub fn remove_unused_vars(func: &mut Function) {
         block.instructions.retain(|&ref instruction| {
             match *instruction {
                 Instruction::Assign(ref dest, _) => read_vars.contains(dest),
-                _ => true,
+                Instruction::Compute(_) => true,
+                // TODO if no side effect,
+                // we can delete(func call is the only side effect for now)
             }
         });
     }
@@ -239,7 +237,7 @@ pub fn fold_constants(blocks: &mut Vec<BasicBlock>) -> bool {
         for instruction in &mut block.instructions {
             match *instruction {
                 Instruction::Assign(_, ref mut comp) |
-                Instruction::Print(ref mut comp) => {
+                Instruction::Compute(ref mut comp) => {
                     *comp = match comp.clone() {
                         Computation::Add(Value::Const(a), Value::Const(b)) => {
                             has_changed = true;
@@ -296,7 +294,6 @@ pub fn fold_constants(blocks: &mut Vec<BasicBlock>) -> bool {
                         _ => comp.clone(),
                     };
                 }
-                _ => {}
             }
         }
     }

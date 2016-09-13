@@ -23,9 +23,6 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    // TODO: span is a bit repetitive
-    Print { expr: Expression, span: Span },
-    Read { target_id: String, span: Span },
     If {
         cond: Expression,
         if_stmts: Vec<Statement>,
@@ -39,11 +36,8 @@ pub enum Statement {
         span: Span,
     },
     Break { span: Span },
-    Assign {
-        target_id: String,
-        value: Expression,
-        span: Span,
-    },
+    Return { expr: Expression, span: Span },
+    Expression { expr: Expression, span: Span },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +64,11 @@ pub enum UnOpKind {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
+    Assign {
+        id: String,
+        value: Box<Expression>,
+        span: Span,
+    },
     BinOp {
         kind: BinOpKind,
         lhs: Box<Expression>,
@@ -94,6 +93,7 @@ pub enum Expression {
 impl Expression {
     pub fn span(&self) -> Span {
         match *self {
+            Expression::Assign { span, .. } |
             Expression::BinOp { span, .. } |
             Expression::UnOp { span, .. } |
             Expression::Paren { span, .. } |

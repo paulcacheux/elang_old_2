@@ -7,6 +7,8 @@ use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Comput
 pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -> Module {
     let mut functions = Vec::new();
     let mut builder = Builder::new(diag_engine);
+    builder.symbols.functions.insert("print".to_string(), 1);
+    builder.symbols.functions.insert("read".to_string(), 0);
     for function in program.functions {
         functions.push(builder.generate_function(function))
     }
@@ -76,6 +78,7 @@ impl<'a> Builder<'a> {
         }
 
         self.symbols.functions.insert(function.name.clone(), function.params.len());
+        self.symbols.vars.extend(function.params.clone());
 
         let mut blocks = Vec::new();
 
@@ -104,27 +107,9 @@ impl<'a> Builder<'a> {
     fn generate_statement(&mut self, statement: ast::Statement) -> Vec<BasicBlock> {
         use ast::Statement::*;
         match statement {
-            Print { expr, .. } => {
-                let expr_name = self.new_temp();
-                let mut instructions = self.generate_expression(expr, expr_name.clone());
-                instructions.push(Instruction::Print(Computation::Value(Value::Var(expr_name))));
-
-                vec![BasicBlock {
-                         id: self.new_blockid(),
-                         instructions: instructions,
-                         branch: Branch::Jmp(self.peek_blockid()),
-                     }]
-            }
-            Read { target_id, .. } => {
-                vec![BasicBlock {
-                         id: self.new_blockid(),
-                         instructions: vec![Instruction::Read(target_id.clone())],
-                         branch: Branch::Jmp(self.peek_blockid()),
-                     }]
-            }
             If { cond, if_stmts, else_stmts, .. } => {
                 let cond_name = self.new_temp();
-                let cond_inst = self.generate_expression(cond, cond_name.clone());
+                let cond_inst = self.generate_expression(cond, Some(cond_name.clone()));
                 let cond_blockid = self.new_blockid();
                 let true_blockid = self.new_blockid();
                 let skip_false_blockid = self.new_blockid();
@@ -220,7 +205,7 @@ impl<'a> Builder<'a> {
             }
             While { cond, stmts, .. } => {
                 let cond_name = self.new_temp();
-                let cond_inst = self.generate_expression(cond, cond_name.clone());
+                let cond_inst = self.generate_expression(cond, Some(cond_name.clone()));
                 let cond_blockid = self.new_blockid();
                 let content_blockid = self.new_blockid();
                 let end_blockid = self.new_blockid();
@@ -269,15 +254,19 @@ impl<'a> Builder<'a> {
                         .report_sema_error("Break outside of a loop/while".to_string(), span);
                 }
             }
-            Assign { target_id, value, .. } => {
-                let value_name = self.new_temp();
-                let mut instructions = self.generate_expression(value, value_name.clone());
-                instructions.push(Instruction::Assign(target_id.clone(),
-                                                      Computation::Value(Value::Var(value_name))));
-
+            Return { expr, .. } => {
+                let expr_name = self.new_temp();
+                let instructions = self.generate_expression(expr, Some(expr_name.clone()));
                 vec![BasicBlock {
                          id: self.new_blockid(),
                          instructions: instructions,
+                         branch: Branch::Ret(Value::Var(expr_name)),
+                     }]
+            }
+            Expression { expr, .. } => {
+                vec![BasicBlock {
+                         id: self.new_blockid(),
+                         instructions: self.generate_expression(expr, None),
                          branch: Branch::Jmp(self.peek_blockid()),
                      }]
             }
@@ -286,17 +275,27 @@ impl<'a> Builder<'a> {
 
     fn generate_expression(&mut self,
                            expression: ast::Expression,
-                           name: String)
+                           name: Option<String>)
                            -> Vec<Instruction> {
         use ast::Expression::*;
         use ast::BinOpKind;
         use ast::UnOpKind;
         match expression {
+            Assign { id, value, .. } => {
+                let value_name = self.new_temp();
+                let mut instructions = self.generate_expression(*value, Some(value_name.clone()));
+                instructions.push(Instruction::Assign(id.clone(),
+                                                      Computation::Value(Value::Var(value_name))));
+                if let Some(name) = name {
+                    instructions.push(Instruction::Assign(name, Computation::Value(Value::Var(id))))
+                }
+                instructions
+            }
             BinOp { kind, lhs, rhs, .. } => {
                 let lhs_name = self.new_temp();
                 let rhs_name = self.new_temp();
-                let mut instructions = self.generate_expression(*lhs, lhs_name.clone());
-                instructions.extend(self.generate_expression(*rhs, rhs_name.clone()));
+                let mut instructions = self.generate_expression(*lhs, Some(lhs_name.clone()));
+                instructions.extend(self.generate_expression(*rhs, Some(rhs_name.clone())));
                 let comp = match kind {
                     BinOpKind::Add => Computation::Add(Value::Var(lhs_name), Value::Var(rhs_name)),
                     BinOpKind::Sub => Computation::Sub(Value::Var(lhs_name), Value::Var(rhs_name)),
@@ -322,17 +321,26 @@ impl<'a> Builder<'a> {
                         Computation::CmpNotEq(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
                 };
-                instructions.push(Instruction::Assign(name, comp));
+                instructions.push(if let Some(name) = name {
+                    Instruction::Assign(name, comp)
+                } else {
+                    Instruction::Compute(comp)
+                });
                 instructions
             }
             UnOp { kind, expr, .. } => {
                 let expr_name = self.new_temp();
-                let mut instructions = self.generate_expression(*expr, expr_name.clone());
-                instructions.push(Instruction::Assign(name, match kind {
+                let mut instructions = self.generate_expression(*expr, Some(expr_name.clone()));
+                let comp = match kind {
                     UnOpKind::Plus => Computation::Value(Value::Var(expr_name)),
                     UnOpKind::Minus => Computation::Negate(Value::Var(expr_name)),
                     UnOpKind::LogNot => Computation::LogNot(Value::Var(expr_name)),
-                }));
+                };
+                instructions.push(if let Some(name) = name {
+                    Instruction::Assign(name, comp)
+                } else {
+                    Instruction::Compute(comp)
+                });
                 instructions
             }
             Paren { expr, .. } => self.generate_expression(*expr, name),
@@ -358,12 +366,16 @@ impl<'a> Builder<'a> {
                 let mut arg_values = Vec::new();
                 for arg in args {
                     let arg_name = self.new_temp();
-                    instructions.extend(self.generate_expression(arg, arg_name.clone()));
+                    instructions.extend(self.generate_expression(arg, Some(arg_name.clone())));
                     arg_values.push(Value::Var(arg_name));
                 }
-                instructions.push(Instruction::Assign(name,
-                                                      Computation::FuncCall(func_name.clone(),
-                                                                            arg_values)));
+
+                let comp = Computation::FuncCall(func_name.clone(), arg_values);
+                instructions.push(if let Some(name) = name {
+                    Instruction::Assign(name, comp)
+                } else {
+                    Instruction::Compute(comp)
+                });
                 instructions
             }
             Identifier { id, span } => {
@@ -375,10 +387,20 @@ impl<'a> Builder<'a> {
                                              span);
                 }
                 self.symbols.vars.insert(id.clone());
-                vec![Instruction::Assign(name, Computation::Value(Value::Var(id.clone())))]
+                let comp = Computation::Value(Value::Var(id.clone()));
+                vec![if let Some(name) = name {
+                         Instruction::Assign(name, comp)
+                     } else {
+                         Instruction::Compute(comp)
+                     }]
             }
             Number { value, .. } => {
-                vec![Instruction::Assign(name, Computation::Value(Value::Const(value)))]
+                let comp = Computation::Value(Value::Const(value));
+                vec![if let Some(name) = name {
+                         Instruction::Assign(name, comp)
+                     } else {
+                         Instruction::Compute(comp)
+                     }]
             }
         }
     }

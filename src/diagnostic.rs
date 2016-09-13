@@ -37,7 +37,7 @@ impl<'a> DiagnosticEngine<'a> {
         let (description, span) = match error {
             ParseError::Unexpected(desc, span) => {
                 let end_span = Span::new_with_len(self.source.len() - 1, 1);
-                (desc, span.unwrap_or(end_span))
+                (format!("Expected: {}", desc), span.unwrap_or(end_span))
             }
         };
 

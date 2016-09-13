@@ -3,7 +3,10 @@ use itertools::Itertools;
 use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Computation, Value};
 
 pub fn generate(module: Module) -> String {
-    let mut result = String::from("#include <stdlib.h>\n#include <stdio.h>\n\n");
+    let mut result = "#include <stdlib.h>\n#include <stdio.h>\n\n".to_string();
+
+    result.push_str("long print(long val) {\n\tprintf(\"%ld\\n\", val);\n\treturn 0;\n}\n");
+    result.push_str("long read(void) {\n\tlong res;\n\tscanf(\"%ld\", &res);\n\treturn res;\n}\n");
 
     for func in module.functions {
         result.push_str(&generate_function(func));
@@ -12,22 +15,30 @@ pub fn generate(module: Module) -> String {
 }
 
 fn generate_function(func: Function) -> String {
+    let Function { name, params, vars, blocks } = func;
+
     let mut content = String::new();
-    for block in func.blocks {
+    for block in blocks {
         content.push_str(&generate_block(block));
     }
 
-    let var_len = func.vars.len();
+    let var_len = vars.len();
     let init = if var_len > 0 {
         format!("long {};\n",
-                func.vars.into_iter().map(|var| format!("{} = 0", var)).join(", "))
+                vars.into_iter()
+                    .filter(|var| !params.contains(var))
+                    .map(|var| format!("{} = 0", var))
+                    .join(", "))
     } else {
         String::new()
     };
 
-    format!("int {}({}) {{\n {}{} }}\n",
-            func.name,
-            func.params.iter().map(|param| format!("long {}", param)).join(", "),
+    let ret_type = if name == "main" { "int" } else { "long" };
+
+    format!("{} {}({}) {{\n {}{} }}\n",
+            ret_type,
+            name,
+            params.iter().map(|param| format!("long {}", param)).join(", "),
             init,
             content)
 }
@@ -50,10 +61,7 @@ fn generate_instruction(instruction: &Instruction) -> String {
         Instruction::Assign(ref dest, ref comp) => {
             format!("\t{} = {};\n", dest, generate_computation(comp))
         }
-        Instruction::Print(ref comp) => {
-            format!("\tprintf(\"%ld\\n\", {});\n", generate_computation(comp))
-        }
-        Instruction::Read(ref dest) => format!("\tscanf(\"%ld\", &{});\n", dest),
+        Instruction::Compute(ref comp) => format!("\t{};\n", generate_computation(comp)),
     }
 }
 

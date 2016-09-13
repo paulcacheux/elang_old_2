@@ -4,6 +4,7 @@ extern crate rustc_serialize;
 
 use docopt::Docopt;
 
+mod peek_and_push;
 mod source;
 mod token;
 mod lexer;

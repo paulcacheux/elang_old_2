@@ -16,6 +16,7 @@ fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
         "LOOP" => Token::LoopKw,
         "IF" => Token::IfKw,
         "BREAK" => Token::BreakKw,
+        "RETURN" => Token::ReturnKw,
         "ELSE" => Token::ElseKw,
         "WHILE" => Token::WhileKw,
         _ => Token::Identifier(raw),

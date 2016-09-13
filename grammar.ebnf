@@ -10,20 +10,13 @@ param_list = [ IDENTIFIER { ',' IDENTIFIER } ]
 block = BEGIN statement* END
       ;
 
-statement = print-statement
-          | read-statement
-          | if-statement
+statement = if-statement
           | loop-statement
           | while-statement
           | break-statement
+          | return-statement
           | assign-statement
           ;
-
-print-statement = PRINT expression
-                ;
-
-read-statement = READ IDENTIFIER
-               ;
 
 if-statement = IF expression statement* [ ELSE statement* ] END
              ;
@@ -37,11 +30,14 @@ while-statement = WHILE expression statement* END
 break-statement = BREAK
                 ;
 
-assign-statement = IDENTIFIER '=' expression
-                 ;
+return-statement = RETURN expression
 
-expression = ord_comp [ (==|!=) ord_comp ]
+expression = IDENTIFIER '=' expression
+           | eq_comp
            ;
+
+eq_comp = ord_comp [ (==|!=) ord_comp ]
+        ;
 
 ord_comp = sum [ (<|<=|>|>=) sum ]
          ;

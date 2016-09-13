@@ -124,7 +124,7 @@ impl fmt::Display for Computation {
         match *self {
             Computation::Value(ref src) => write!(f, "{}", src),
             Computation::FuncCall(ref func, ref params) => {
-                write!(f, "{}({})", func, params.iter().join(", "))
+                write!(f, "call {}({})", func, params.iter().join(", "))
             }
             Computation::Add(ref lhs, ref rhs) => write!(f, "add {} {}", lhs, rhs),
             Computation::Sub(ref lhs, ref rhs) => write!(f, "sub {} {}", lhs, rhs),
@@ -146,16 +146,14 @@ impl fmt::Display for Computation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     Assign(String, Computation),
-    Print(Computation),
-    Read(String),
+    Compute(Computation),
 }
 
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Instruction::Assign(ref dest, ref comp) => write!(f, "{} = {}", dest, comp),
-            Instruction::Print(ref comp) => write!(f, "print {}", comp),
-            Instruction::Read(ref dest) => write!(f, "{} = read()", dest),
+            Instruction::Compute(ref comp) => write!(f, "{}", comp),
         }
     }
 }
