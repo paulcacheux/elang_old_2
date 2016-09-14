@@ -1,0 +1,28 @@
+//Handle nested branching with IFP...ELSE
+//1
+//2
+//3
+//4
+
+BEGIN
+  IF 1 > 0
+    print(1)
+    IF -1 > 0
+      print(-2)
+      IF 2 > 0
+        print(-2)
+      ELSE
+        print(-3)
+      END
+    ELSE
+      print(2)
+      IF 2 > 0
+        print(3)
+      END
+    END
+  ELSE
+    print(-1)
+  END
+
+  print(4)
+END

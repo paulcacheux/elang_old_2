@@ -1,0 +1,8 @@
+//Calculate modulus between Integer literal
+//1
+//0
+
+BEGIN
+  print(14 % 10%3)
+  print(10 % 2)
+END

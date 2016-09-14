@@ -46,38 +46,39 @@ impl Manager {
     }
 
     pub fn reader(&self) -> Reader {
-        Reader {
-            iter: self.source.char_indices(),
-            commenting: false,
-        }
+        Reader { iter: self.source.char_indices() }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
     iter: str::CharIndices<'a>,
-    commenting: bool,
 }
 
 impl<'a> Iterator for Reader<'a> {
     type Item = (usize, char);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some((bytepos, c)) = self.iter.next() {
-            match (c, self.commenting) {
-                ('{', false) => {
-                    self.commenting = true;
-                    self.next()
+        if self.iter.as_str().starts_with("//") {
+            loop {
+                match self.iter.next() {
+                    Some((_, '\n')) => break,
+                    None => break,
+                    _ => continue,
                 }
-                ('}', true) => {
-                    self.commenting = false;
-                    self.next()
-                }
-                (c, false) => Some((bytepos, c)),
-                (_, true) => self.next(),
             }
+            self.next()
+        } else if self.iter.as_str().starts_with("/*") {
+            self.iter.next();
+            let target = |s: &str| s.len() != 0 && !s.starts_with("*/");
+            while target(self.iter.as_str()) {
+                self.iter.next();
+            }
+            self.iter.next();
+            self.iter.next();
+            self.next()
         } else {
-            None
+            self.iter.next()
         }
     }
 }

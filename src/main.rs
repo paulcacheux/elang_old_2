@@ -21,8 +21,8 @@ use lexer::Lexer;
 use parser::Parser;
 
 const USAGE: &'static str = "
-Usage: bitsy [options] INPUT
-       bitsy --help
+Usage: elang [options] INPUT
+       elang --help
 
 Options:
     -h, --help         Show this message.

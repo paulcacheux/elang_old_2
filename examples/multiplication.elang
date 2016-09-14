@@ -1,0 +1,6 @@
+//Multiply several Integer literals
+//16
+
+BEGIN
+  print(2 *2* 4)
+END

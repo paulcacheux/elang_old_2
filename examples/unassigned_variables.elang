@@ -1,0 +1,14 @@
+//Allow use of unassigned variable identifiers
+//0
+//1
+//0
+//1
+//0
+
+BEGIN
+  print(x)
+  print(y + 1)
+  print(z * 100)
+  print(x + y + z*100 + 1)
+  print(longVariableName)
+END

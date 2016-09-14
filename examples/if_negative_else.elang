@@ -1,0 +1,31 @@
+//Branch to ELSE on non-negative values with IFN
+//116
+//827
+//1130
+//115
+
+BEGIN
+  IF 0 < 0
+    print(1)
+  ELSE
+    print(116)
+  END
+
+  IF -1 < 0
+    print(827)
+  ELSE
+    print(2)
+  END
+
+  IF x < 0
+    print(3)
+  ELSE
+    print(1130)
+  END
+
+  IF y - 1 < 0
+    print(115)
+  ELSE
+    print(4)
+  END
+END

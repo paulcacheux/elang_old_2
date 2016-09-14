@@ -1,0 +1,30 @@
+//Branch on negative values with IFN
+//116
+//1130
+//24
+
+BEGIN
+  IF -1 < 0
+    print(116)
+  END
+
+  IF 0 < 0
+    print(827)
+  END
+
+  IF 12 < 0
+    print(1000)
+  END
+
+  IF -10 + 2 < 0
+    print(1130)
+  END
+
+  IF x < 0
+    print(365)
+  END
+
+  IF x - 1 < 0
+    print(24)
+  END
+END

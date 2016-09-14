@@ -1,0 +1,34 @@
+//Branch on zero values with IFZ
+//116
+//827
+//615
+
+BEGIN
+  IF 0 == 0
+    print(116)
+  END
+
+  IF 1 == 0
+    print(1)
+  END
+
+  IF x == 0
+    print(827)
+  END
+
+  IF -100 == 0
+    print(2)
+  END
+
+  IF 10 - 2*5 == 0
+    print(615)
+  END
+
+  IF x + 1 == 0
+    print(3)
+  END
+
+  IF x - 10 == 0
+    print(4)
+  END
+END

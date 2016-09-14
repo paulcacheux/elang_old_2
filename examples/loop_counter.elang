@@ -1,0 +1,22 @@
+//Break from LOOP based on a counter
+//5
+//4
+//3
+//2
+//1
+//615
+
+BEGIN
+  x = 5
+
+  LOOP
+    IF 1 - x > 0
+      BREAK
+    END
+
+    print(x)
+    x = x - 1
+  END
+
+  print(615)
+END

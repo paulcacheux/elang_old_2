@@ -1,0 +1,31 @@
+//Branch to ELSE on non-zero values with IFZ
+//116
+//827
+//1130
+//115
+
+BEGIN
+  IF 0 == 0
+    print(116)
+  ELSE
+    print(1)
+  END
+
+  IF 1 == 0
+    print(2)
+  ELSE
+    print(827)
+  END
+
+  IF x == 0
+    print(1130)
+  ELSE
+    print(3)
+  END
+
+  IF y+1 == 0
+    print(4)
+  ELSE
+    print(115)
+  END
+END

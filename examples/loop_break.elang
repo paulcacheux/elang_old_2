@@ -1,0 +1,20 @@
+//Break from a LOOP construct
+//0
+//2
+//3
+
+BEGIN
+  print(0)
+
+  LOOP
+    BREAK
+    print(1)
+  END
+
+  LOOP
+    print(2)
+    BREAK
+  END
+
+  print(3)
+END

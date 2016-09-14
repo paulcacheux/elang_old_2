@@ -1,0 +1,6 @@
+//Print an integer literal
+//116
+
+BEGIN
+  print(116)
+END

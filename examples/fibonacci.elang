@@ -1,0 +1,30 @@
+//Calculate the first 10 numbers in the fibonacci sequence
+//0
+//1
+//1
+//2
+//3
+//5
+//8
+//13
+//21
+//34
+
+BEGIN
+  fibCount = 10
+  thisFib = 1
+
+  LOOP
+    print(lastFib)
+    fibCount = fibCount - 1
+
+    IF fibCount > 0
+      nextFib = thisFib + lastFib
+
+      lastFib = thisFib
+      thisFib = nextFib
+    ELSE
+      BREAK
+    END
+  END
+END
