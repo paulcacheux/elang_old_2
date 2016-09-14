@@ -1,4 +1,4 @@
-//Break from LOOP based on a counter
+//break from loop based on a counter
 //5
 //4
 //3
@@ -6,17 +6,17 @@
 //1
 //615
 
-BEGIN
+{
   x = 5
 
-  LOOP
-    IF 1 - x > 0
-      BREAK
-    END
+  loop {
+    if 1 - x > 0 {
+      break
+    }
 
     print(x)
     x = x - 1
-  END
+  }
 
   print(615)
-END
+}

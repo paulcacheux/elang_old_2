@@ -107,7 +107,7 @@ impl<'a> Builder<'a> {
     fn generate_statement(&mut self, statement: ast::Statement) -> Vec<BasicBlock> {
         use ast::Statement::*;
         match statement {
-            If { cond, if_stmts, else_stmts, .. } => {
+            If { cond, if_stmt, else_stmt, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, Some(cond_name.clone()));
                 let cond_blockid = self.new_blockid();
@@ -130,9 +130,7 @@ impl<'a> Builder<'a> {
                                           branch: Branch::Jmp(self.peek_blockid()),
                                       }];
 
-                for stmt in if_stmts {
-                    blocks.extend(self.generate_statement(stmt));
-                }
+                blocks.extend(self.generate_statement(*if_stmt));
 
                 // linker
                 blocks.push(BasicBlock {
@@ -153,10 +151,8 @@ impl<'a> Builder<'a> {
                     branch: Branch::Jmp(self.peek_blockid()),
                 });
 
-                if let Some(else_stmts) = else_stmts {
-                    for stmt in else_stmts {
-                        blocks.extend(self.generate_statement(stmt));
-                    }
+                if let Some(else_stmt) = else_stmt {
+                    blocks.extend(self.generate_statement(*else_stmt));
                 }
 
                 // to link the "peek label" of the last statement with the end_label
@@ -173,7 +169,7 @@ impl<'a> Builder<'a> {
                 });
                 blocks
             }
-            Loop { stmts, .. } => {
+            Loop { stmt, .. } => {
                 let loop_start_blockid = self.new_blockid();
                 let loop_end_blockid = self.new_blockid();
 
@@ -184,9 +180,7 @@ impl<'a> Builder<'a> {
                                       }];
 
                 self.current_break_blockid.push(loop_end_blockid);
-                for stmt in stmts {
-                    blocks.extend(self.generate_statement(stmt));
-                }
+                blocks.extend(self.generate_statement(*stmt));
                 self.current_break_blockid.pop();
 
                 // loop reloader
@@ -203,7 +197,7 @@ impl<'a> Builder<'a> {
                 });
                 blocks
             }
-            While { cond, stmts, .. } => {
+            While { cond, stmt, .. } => {
                 let cond_name = self.new_temp();
                 let cond_inst = self.generate_expression(cond, Some(cond_name.clone()));
                 let cond_blockid = self.new_blockid();
@@ -225,9 +219,7 @@ impl<'a> Builder<'a> {
                                       }];
 
                 self.current_break_blockid.push(end_blockid);
-                for stmt in stmts {
-                    blocks.extend(self.generate_statement(stmt));
-                }
+                blocks.extend(self.generate_statement(*stmt));
                 self.current_break_blockid.pop();
 
                 blocks.push(BasicBlock {
@@ -270,7 +262,16 @@ impl<'a> Builder<'a> {
                          branch: Branch::Jmp(self.peek_blockid()),
                      }]
             }
+            Block { block, .. } => self.generate_block(block),
         }
+    }
+
+    fn generate_block(&mut self, block: ast::Block) -> Vec<BasicBlock> {
+        let mut blocks = Vec::new();
+        for stmt in block.stmts {
+            blocks.extend(self.generate_statement(stmt));
+        }
+        blocks
     }
 
     fn generate_expression(&mut self,

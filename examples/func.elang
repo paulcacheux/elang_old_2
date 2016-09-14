@@ -3,13 +3,12 @@
 //16
 //64
 
-FN square(x)
-BEGIN
-    RETURN x*x
-END
+fn square(x) {
+    return x*x
+}
 
-BEGIN
+{
     print(square(2))
     print(square(4))
     print(square(8))
-END
+}

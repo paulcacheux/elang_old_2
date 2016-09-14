@@ -8,17 +8,13 @@ use diagnostic::DiagnosticEngine;
 fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     let span = Span::new_with_len(bytepos, raw.len());
     let token = match raw.as_str() {
-        "FN" => Token::FnKw,
-        "BEGIN" => Token::BeginKw,
-        "END" => Token::EndKw,
-        "READ" => Token::ReadKw,
-        "PRINT" => Token::PrintKw,
-        "LOOP" => Token::LoopKw,
-        "IF" => Token::IfKw,
-        "BREAK" => Token::BreakKw,
-        "RETURN" => Token::ReturnKw,
-        "ELSE" => Token::ElseKw,
-        "WHILE" => Token::WhileKw,
+        "fn" => Token::FnKw,
+        "loop" => Token::LoopKw,
+        "if" => Token::IfKw,
+        "break" => Token::BreakKw,
+        "return" => Token::ReturnKw,
+        "else" => Token::ElseKw,
+        "while" => Token::WhileKw,
         _ => Token::Identifier(raw),
     };
     (span, token)
@@ -114,6 +110,8 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                 '/' => (Span::new_with_len(bytepos, 1), Token::DivideOp),
                 '%' => (Span::new_with_len(bytepos, 1), Token::ModOp),
                 ',' => (Span::new_with_len(bytepos, 1), Token::Comma),
+                '{' => (Span::new_with_len(bytepos, 1), Token::LBrace),
+                '}' => (Span::new_with_len(bytepos, 1), Token::RBrace),
                 c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos),
             })
         } else {

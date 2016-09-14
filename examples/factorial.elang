@@ -1,29 +1,24 @@
 //Calculate the factorial of a number
 //120
 
-BEGIN
+{
   factorialOf = 5
 
-  IF factorialOf > 0
-    x = factorialOf /*
-      This comment
-      spans multiple lines! ()__()
-    */
+  if factorialOf > 0 {
+    x = factorialOf
     y = 1
 
-    LOOP
-      IF x > 0
+    loop {
+      if x > 0 {
         y = y * x
         x = x - 1
-      ELSE
-        BREAK
-      END
-    END
+      } else {
+        break
+      }
+    }
 
     print(y)
-  ELSE
-    print(-1 /*Typical comment*/)
-  END
-END
-
-// A comment at the end 
+  } else {
+    print(-1)
+  }
+}

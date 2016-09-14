@@ -1,13 +1,13 @@
-program = function_def* BEGIN statement* END
+program = function_def* block
         ;
 
-function_def = FN IDENTIFIER '(' param_list ')' block
+function_def = "fn" IDENTIFIER '(' param_list ')' block
              ;
 
 param_list = [ IDENTIFIER { ',' IDENTIFIER } ]
            ;
 
-block = BEGIN statement* END
+block = '{' statement* '}'
       ;
 
 statement = if-statement
@@ -15,22 +15,27 @@ statement = if-statement
           | while-statement
           | break-statement
           | return-statement
-          | assign-statement
+          | expr-statement
+          | block
           ;
 
-if-statement = IF expression statement* [ ELSE statement* ] END
+if-statement = "if" expression statement [ "else" statement ]
              ;
 
-loop-statement = LOOP statement* END
+loop-statement = "loop" statement
                ;
 
-while-statement = WHILE expression statement* END
+while-statement = "while" expression statement
                 ;
 
-break-statement = BREAK
+break-statement = "break"
                 ;
 
-return-statement = RETURN expression
+return-statement = "return" expression
+                 ;
+
+expr-statement = expression
+               ;
 
 expression = IDENTIFIER '=' expression
            | eq_comp

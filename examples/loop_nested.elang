@@ -1,4 +1,4 @@
-//Allow for nested LOOP constructs
+//Allow for nested loop constructs
 //4
 //3
 //2
@@ -11,25 +11,24 @@
 //1
 //0
 
-BEGIN
+{
   x = 4
-  LOOP
+  loop {
     y = x
-    LOOP
-      IF 2 - y > 0
-        BREAK
-      END
+    loop {
+      if 2 - y > 0 {
+        break
+      }
 
       print(y)
       y = y - 1
-    END
+    }
 
     print(y)
 
-    IF 1 - x > 0
-      BREAK
-    ELSE
+    if 1 - x > 0
+      break
+    else
       x = x - 1
-    END
-  END
-END
+  }
+}

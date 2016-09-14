@@ -10,39 +10,37 @@
 //2
 //1
 
-BEGIN
+{
   primeCalc = 23
-  LOOP
-    IF primeCalc > 0
+  loop {
+    if primeCalc > 0 {
       primeTest = primeCalc - 1
       modMulti = 1
 
       // Multiply the modulus of all numbers less than this one together
-      LOOP
-        IF primeTest - 1 > 0
+      loop {
+        if primeTest - 1 > 0 {
           thisDiv = primeCalc % primeTest
           modMulti = modMulti * thisDiv
 
-          IF modMulti > 0 // Reset mod multi to it doesn't get too big
+          if modMulti > 0 // Reset mod multi to it doesn't get too big
             modMulti = 1
-          ELSE // If 0, we already know this isn't a prime
-            BREAK
-          END
+          else // if 0, we already know this isn't a prime
+            break
 
           primeTest = primeTest - 1
-        ELSE
-          BREAK
-        END
-      END
+        } else {
+          break
+        }
+      }
 
       // This must be a prime number
-      IF modMulti > 0
+      if modMulti > 0
         print(primeCalc)
-      END
 
       primeCalc = primeCalc - 1
-    ELSE
-      BREAK
-    END
-  END
-END
+    } else {
+      break
+    }
+  }
+}

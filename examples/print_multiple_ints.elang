@@ -2,7 +2,7 @@
 //116
 //827
 
-BEGIN
+{
   print(116)
   print(827)
-END
+}

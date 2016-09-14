@@ -25,19 +25,34 @@ pub struct Block {
 pub enum Statement {
     If {
         cond: Expression,
-        if_stmts: Vec<Statement>,
-        else_stmts: Option<Vec<Statement>>,
+        if_stmt: Box<Statement>,
+        else_stmt: Option<Box<Statement>>,
         span: Span,
     },
-    Loop { stmts: Vec<Statement>, span: Span },
+    Loop { stmt: Box<Statement>, span: Span },
     While {
         cond: Expression,
-        stmts: Vec<Statement>,
+        stmt: Box<Statement>,
         span: Span,
     },
     Break { span: Span },
     Return { expr: Expression, span: Span },
     Expression { expr: Expression, span: Span },
+    Block { block: Block, span: Span },
+}
+
+impl Statement {
+    pub fn span(&self) -> Span {
+        match *self {
+            Statement::If { span, .. } |
+            Statement::Loop { span, .. } |
+            Statement::While { span, .. } |
+            Statement::Break { span, .. } |
+            Statement::Return { span, .. } |
+            Statement::Expression { span, .. } |
+            Statement::Block { span, .. } => span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

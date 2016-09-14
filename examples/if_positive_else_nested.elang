@@ -1,28 +1,26 @@
-//Handle nested branching with IFP...ELSE
+//Handle nested branching with ifP...else
 //1
 //2
 //3
 //4
 
-BEGIN
-  IF 1 > 0
+{
+  if 1 > 0 {
     print(1)
-    IF -1 > 0
+    if -1 > 0 {
       print(-2)
-      IF 2 > 0
+      if 2 > 0
         print(-2)
-      ELSE
+      else
         print(-3)
-      END
-    ELSE
+    } else {
       print(2)
-      IF 2 > 0
+      if 2 > 0
         print(3)
-      END
-    END
-  ELSE
+    }
+  } else {
     print(-1)
-  END
+  }
 
   print(4)
-END
+}

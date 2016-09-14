@@ -1,6 +1,6 @@
 //Divide Integer literals
 //2
 
-BEGIN
+{
   print(10/2 /2)
-END
+}

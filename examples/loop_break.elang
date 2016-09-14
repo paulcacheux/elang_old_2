@@ -1,20 +1,20 @@
-//Break from a LOOP construct
+//break from a loop construct
 //0
 //2
 //3
 
-BEGIN
+{
   print(0)
 
-  LOOP
-    BREAK
+  loop {
+    break
     print(1)
-  END
+  }
 
-  LOOP
+  loop {
     print(2)
-    BREAK
-  END
+    break
+  }
 
   print(3)
-END
+}

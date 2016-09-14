@@ -1,30 +1,24 @@
-//Branch on positive values with IFP
+//Branch on positive values with ifP
 //116
 //1130
 //24
 
-BEGIN
-  IF 1 > 0
+{
+  if 1 > 0
     print(116)
-  END
 
-  IF 0 > 0
+  if 0 > 0
     print(827)
-  END
 
-  IF -12 > 0
+  if -12 > 0
     print(1000)
-  END
 
-  IF -2 + 10 > 0
+  if -2 + 10 > 0
     print(1130)
-  END
 
-  IF x > 0
+  if x > 0
     print(365)
-  END
 
-  IF x + 1 > 0
+  if x + 1 > 0
     print(24)
-  END
-END
+}

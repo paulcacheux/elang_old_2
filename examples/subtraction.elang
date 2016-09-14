@@ -1,6 +1,6 @@
 //Subtract Integer literals
 //7
 
-BEGIN
+{
   print(10 - 2-1)
-END
+}

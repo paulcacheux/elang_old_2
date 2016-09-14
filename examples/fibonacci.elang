@@ -10,21 +10,21 @@
 //21
 //34
 
-BEGIN
+{
   fibCount = 10
   thisFib = 1
 
-  LOOP
+  loop {
     print(lastFib)
     fibCount = fibCount - 1
 
-    IF fibCount > 0
+    if fibCount > 0 {
       nextFib = thisFib + lastFib
 
       lastFib = thisFib
       thisFib = nextFib
-    ELSE
-      BREAK
-    END
-  END
-END
+    } else {
+      break
+    }
+  }
+}

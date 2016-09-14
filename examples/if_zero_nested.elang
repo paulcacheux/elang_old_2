@@ -1,4 +1,4 @@
-//Handle nested branching with IFZ
+//Handle nested branching with ifZ
 //1
 //2
 //3
@@ -6,20 +6,20 @@
 //5
 //6
 
-BEGIN
+{
   print(1)
-  IF 0 == 0
+  if 0 == 0 {
     print(2)
-    IF 2 - (1 + 1) == 0
+    if 2 - (1 + 1) == 0 {
       print(3)
-      IF x == 0
+      if x == 0 {
         print(4)
-        IF y + x - 1 + 1 == 0
+        if y + x - 1 + 1 == 0 {
           print(5)
-        END
-      END
-    END
-  END
+        }
+      }
+    }
+  }
 
   print(6)
-END
+}

@@ -44,7 +44,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
-        // program = BEGIN statement* END
+        // program = function_def* block
 
         let mut funcs = Vec::new();
         while self.lexer.peek().is_some() && match_peek_token!(self.lexer, Token::FnKw) {
@@ -70,7 +70,8 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_function_def(&mut self) -> Result<Function, ParseError> {
-        let func_span = expect!(self.lexer, Token::FnKw, "FN");
+        // function_def = "fn" IDENTIFIER '(' param_list ')' block
+        let func_span = expect!(self.lexer, Token::FnKw, "fn");
 
         let func_name = match self.lexer.next() {
             Some((_, Token::Identifier(func_name))) => func_name,
@@ -105,15 +106,15 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_block(&mut self) -> Result<Block, ParseError> {
-        // block = BEGIN statement* END
+        // block = '{' statement* '}'
 
-        let begin_span = expect!(self.lexer, Token::BeginKw, "BEGIN");
+        let begin_span = expect!(self.lexer, Token::LBrace, "{");
 
         let mut stmts = Vec::new();
-        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::EndKw) {
+        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::RBrace) {
             stmts.push(try!(self.parse_statement()));
         }
-        let end_span = expect!(self.lexer, Token::EndKw, "END");
+        let end_span = expect!(self.lexer, Token::RBrace, "}");
 
         Ok(Block {
             stmts: stmts,
@@ -135,90 +136,89 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             Some(&(_, Token::WhileKw)) => self.parse_while_statement(),
             Some(&(_, Token::BreakKw)) => self.parse_break_statement(),
             Some(&(_, Token::ReturnKw)) => self.parse_return_statement(),
+            Some(&(_, Token::LBrace)) => self.parse_block_statement(),
             _ => self.parse_statement_expression(),
         }
     }
 
     pub fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
-        // if-statement = ifkw expression statement* [ ELSE statement* ] END
+        // if-statement = "if" expression statement [ "else" statement ]
 
-        let kw_span = expect!(self.lexer, Token::IfKw, "IF");
+        let kw_span = expect!(self.lexer, Token::IfKw, "if");
 
         let condition = try!(self.parse_expression());
-        let mut if_statements = Vec::new();
-        while self.lexer.peek().is_some() &&
-              !match_peek_token!(self.lexer, Token::ElseKw, Token::EndKw) {
-            if_statements.push(try!(self.parse_statement()));
-        }
-        let else_statements = {
+        let stmt = try!(self.parse_statement());
+        let else_stmt = {
             if match_peek_token!(self.lexer, Token::ElseKw) {
                 self.lexer.next();
-                let mut stmts = Vec::new();
-                while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::EndKw) {
-                    stmts.push(try!(self.parse_statement()));
-                }
-                Some(stmts)
+                Some(try!(self.parse_statement()))
             } else {
                 None
             }
         };
-        let end_span = expect!(self.lexer, Token::EndKw, "END");
+        let end_span = if let Some(ref else_stmt) = else_stmt {
+            else_stmt.span()
+        } else {
+            stmt.span()
+        };
         Ok(Statement::If {
             cond: condition,
-            if_stmts: if_statements,
-            else_stmts: else_statements,
+            if_stmt: Box::new(stmt),
+            else_stmt: else_stmt.map(Box::new),
             span: Span::merge(kw_span, end_span),
         })
     }
 
     pub fn parse_loop_statement(&mut self) -> Result<Statement, ParseError> {
-        // loop-statement = LOOP statement* END
+        // loop-statement = "loop" statement
 
-        let kw_span = expect!(self.lexer, Token::LoopKw, "LOOP");
-        let mut statements = Vec::new();
-        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::EndKw) {
-            statements.push(try!(self.parse_statement()));
-        }
-        let end_span = expect!(self.lexer, Token::EndKw, "END");
+        let kw_span = expect!(self.lexer, Token::LoopKw, "loop");
+        let stmt = try!(self.parse_statement());
+        let span = Span::merge(kw_span, stmt.span());
         Ok(Statement::Loop {
-            stmts: statements,
-            span: Span::merge(kw_span, end_span),
+            stmt: Box::new(stmt),
+            span: span,
         })
     }
 
     pub fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
-        // while-statement = WHILE expression statement* END
+        // while-statement = "while" expression statement
 
-        let kw_span = expect!(self.lexer, Token::WhileKw, "WHILE");
+        let kw_span = expect!(self.lexer, Token::WhileKw, "while");
         let condition = try!(self.parse_expression());
-        let mut statements = Vec::new();
-        while self.lexer.peek().is_some() && !match_peek_token!(self.lexer, Token::EndKw) {
-            statements.push(try!(self.parse_statement()));
-        }
-        let end_span = expect!(self.lexer, Token::EndKw, "END");
+        let stmt = try!(self.parse_statement());
+        let span = Span::merge(kw_span, stmt.span());
         Ok(Statement::While {
             cond: condition,
-            stmts: statements,
-            span: Span::merge(kw_span, end_span),
+            stmt: Box::new(stmt),
+            span: span,
         })
     }
 
     pub fn parse_break_statement(&mut self) -> Result<Statement, ParseError> {
-        // break-statement = BREAK
+        // break-statement = "break"
 
-        let kw_span = expect!(self.lexer, Token::BreakKw, "BREAK");
+        let kw_span = expect!(self.lexer, Token::BreakKw, "break");
         Ok(Statement::Break { span: kw_span })
     }
 
     pub fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
-        // return-statement = RETURN expression
+        // return-statement = "return" expression
 
-        let kw_span = expect!(self.lexer, Token::ReturnKw, "RETURN");
+        let kw_span = expect!(self.lexer, Token::ReturnKw, "return");
         let expr = try!(self.parse_expression());
         let span = Span::merge(kw_span, expr.span());
         Ok(Statement::Return {
             expr: expr,
             span: span,
+        })
+    }
+
+    pub fn parse_block_statement(&mut self) -> Result<Statement, ParseError> {
+        let block = try!(self.parse_block());
+        Ok(Statement::Block {
+            span: block.span,
+            block: block,
         })
     }
 
