@@ -45,6 +45,10 @@ impl Manager {
         Ok(Manager { source: raw_input })
     }
 
+    pub fn from_raw_string(source: String) -> Manager {
+        Manager { source: source }
+    }
+
     pub fn reader(&self) -> Reader {
         Reader { iter: self.source.char_indices() }
     }
