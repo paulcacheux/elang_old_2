@@ -1,6 +1,6 @@
-use std::iter::Peekable;
 use std::str::FromStr;
 
+use double_peekable::DoublePeekable;
 use token::Token;
 use source::Span;
 use diagnostic::DiagnosticEngine;
@@ -28,25 +28,63 @@ fn is_identifier_char(c: char) -> bool {
 }
 
 pub struct Lexer<'a, R: Iterator<Item = (usize, char)>> {
-    input: Peekable<R>,
+    input: DoublePeekable<R>,
     diagnostic: &'a DiagnosticEngine<'a>,
 }
 
 impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
     pub fn new(input: R, diag: &'a DiagnosticEngine<'a>) -> Lexer<'a, R> {
         Lexer {
-            input: input.peekable(),
+            input: DoublePeekable::new(input),
             diagnostic: diag,
         }
     }
 
     fn skip_whitespace(&mut self) {
         loop {
+            if let Some((&(_, c1), &(_, c2))) = self.input.peek_double() {
+                match (c1, c2) {
+                    ('/', '/') => {
+                        self.input.next();
+                        self.input.next();
+                        self.skip_to_endline();
+                    }
+                    ('/', '*') => {
+                        self.input.next();
+                        self.input.next();
+                        self.skip_multicomment(1);
+                    }
+                    (c, _) if c.is_whitespace() => {
+                        self.input.next();
+                    }
+                    _ => break,
+                }
+            }
+        }
+    }
+
+    fn skip_to_endline(&mut self) {
+        loop {
             match self.input.peek() {
-                Some(&(_, c)) if c.is_whitespace() => {
+                Some(&(_, '\n')) => break,
+                Some(_) => continue,
+                None => break,
+            }
+        }
+    }
+
+    fn skip_multicomment(&mut self, deep: usize) {
+        if deep == 0 {
+            return;
+        }
+        loop {
+            match self.input.peek_double() {
+                Some((&(_, '*'), &(_, '/'))) => {
+                    self.skip_multicomment(deep - 1);
+                }
+                _ => {
                     self.input.next();
                 }
-                _ => break,
             }
         }
     }
@@ -66,11 +104,13 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
         }
     }
 
-    fn take_while<P>(&mut self, first: char, predicate: P) -> String
+    fn take_while<P>(&mut self, first: Option<char>, predicate: P) -> String
         where P: Fn(char) -> bool
     {
         let mut res = String::new();
-        res.push(first);
+        if let Some(first) = first {
+            res.push(first);
+        }
 
         loop {
             match self.input.peek() {
@@ -91,10 +131,10 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
         if let Some((bytepos, c)) = self.input.next() {
             Some(match c {
                 c if is_identifier_char(c) => {
-                    identifier_or_keyword(self.take_while(c, is_identifier_char), bytepos)
+                    identifier_or_keyword(self.take_while(Some(c), is_identifier_char), bytepos)
                 }
                 c if c.is_digit(10) => {
-                    let number = self.take_while(c, |c| c.is_digit(10));
+                    let number = self.take_while(Some(c), |c| c.is_digit(10));
                     let value = i64::from_str(&number).unwrap();
                     (Span::new_with_len(bytepos, number.len()), Token::Number(value))
                 }

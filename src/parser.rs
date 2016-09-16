@@ -1,10 +1,10 @@
-use npeekable::NPeekable;
+use double_peekable::DoublePeekable;
 use ast::{Program, Function, Block, Statement, Expression, BinOpKind, UnOpKind};
 use source::Span;
 use token::Token;
 
 pub struct Parser<L: IntoIterator<Item = (Span, Token)>> {
-    lexer: NPeekable<L::IntoIter>,
+    lexer: DoublePeekable<L::IntoIter>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,7 +22,7 @@ macro_rules! expect { // we return the span for propagation
 }
 
 macro_rules! match_peek_token {
-    ($lexer:expr => $($p:pat),+) => {
+    ($lexer:expr => $($p:pat)|+) => {
         {
             match $lexer.peek() {
                 $(Some(&(_, $p)) => true),+,
@@ -30,10 +30,10 @@ macro_rules! match_peek_token {
             }
         }
     };
-    ($lexer:expr, $n:expr => $($p:pat),+) => {
+    ($lexer:expr => $p1:pat, $p2:pat) => {
         {
-            match $lexer.peek_n($n) {
-                $(Some(&(_, $p)) => true),+,
+            match $lexer.peek_double() {
+                Some((&(_, $p1), &(_, $p2))) => true,
                 _ => false
             }
         }
@@ -48,7 +48,7 @@ macro_rules! make_unexpected {
 
 impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     pub fn new(lexer: L) -> Parser<L> {
-        Parser { lexer: NPeekable::new(lexer.into_iter()) }
+        Parser { lexer: DoublePeekable::new(lexer.into_iter()) }
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
@@ -243,8 +243,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         // expression = [ IDENTIFIER '=' ] eq_comp
 
         if self.lexer.peek().is_some() &&
-           match_peek_token!(self.lexer, 0 => Token::Identifier(_)) &&
-           match_peek_token!(self.lexer, 1 => Token::AssignOp) {
+           match_peek_token!(self.lexer => Token::Identifier(_), Token::AssignOp) {
             let (begin_span, id) = match self.lexer.next() {
                 Some((span, Token::Identifier(id))) => (span, id),
                 _ => unreachable!(),
@@ -267,7 +266,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let mut lhs = try!(self.parse_ord_comp());
         if self.lexer.peek().is_some() &&
-           match_peek_token!(self.lexer => Token::EqualOp, Token::NotEqualOp) {
+           match_peek_token!(self.lexer => Token::EqualOp | Token::NotEqualOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::EqualOp)) => BinOpKind::Equal,
                 Some((_, Token::NotEqualOp)) => BinOpKind::NotEqual,
@@ -291,9 +290,9 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let mut lhs = try!(self.parse_sum());
         if self.lexer.peek().is_some() &&
            match_peek_token!(self.lexer =>
-                             Token::LessOp,
-                             Token::LessEqualOp,
-                             Token::GreaterOp,
+                             Token::LessOp |
+                             Token::LessEqualOp |
+                             Token::GreaterOp |
                              Token::GreaterEqualOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::LessOp)) => BinOpKind::Less,
@@ -319,7 +318,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let mut lhs = try!(self.parse_factor());
         while self.lexer.peek().is_some() &&
-              match_peek_token!(self.lexer => Token::PlusOp, Token::MinusOp) {
+              match_peek_token!(self.lexer => Token::PlusOp | Token::MinusOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::PlusOp)) => BinOpKind::Add,
                 Some((_, Token::MinusOp)) => BinOpKind::Sub,
@@ -343,7 +342,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let mut lhs = try!(self.parse_term());
         while self.lexer.peek().is_some() &&
-              match_peek_token!(self.lexer => Token::TimesOp, Token::DivideOp, Token::ModOp) {
+              match_peek_token!(self.lexer => Token::TimesOp | Token::DivideOp | Token::ModOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::TimesOp)) => BinOpKind::Mul,
                 Some((_, Token::DivideOp)) => BinOpKind::Div,

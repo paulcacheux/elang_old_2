@@ -2,16 +2,16 @@ use std::collections::VecDeque;
 use std::iter::Fuse;
 
 #[derive(Clone)]
-pub struct NPeekable<I>
+pub struct DoublePeekable<I>
     where I: Iterator
 {
     iter: Fuse<I>,
     buf: VecDeque<I::Item>,
 }
 
-impl<I: Iterator> NPeekable<I> {
-    pub fn new(iter: I) -> NPeekable<I> {
-        NPeekable {
+impl<I: Iterator> DoublePeekable<I> {
+    pub fn new(iter: I) -> DoublePeekable<I> {
+        DoublePeekable {
             iter: iter.fuse(),
             buf: VecDeque::new(),
         }
@@ -31,22 +31,23 @@ impl<I: Iterator> NPeekable<I> {
         }
     }
 
-    pub fn peek_n(&mut self, n: usize) -> Option<&I::Item> {
-        loop {
-            if self.buf.len() <= n {
-                match self.iter.next() {
-                    Some(val) => self.buf.push_back(val),
-                    None => break,
-                }
-            } else {
-                break;
+    pub fn peek_double(&mut self) -> Option<(&I::Item, &I::Item)> {
+        while self.buf.len() < 2 {
+            match self.iter.next() {
+                Some(val) => self.buf.push_back(val),
+                None => break,
             }
         }
-        self.buf.get(n)
+        let first = self.buf.get(0);
+        let second = self.buf.get(1);
+        match (first, second) {
+            (Some(ref a), Some(ref b)) => Some((a, b)),
+            _ => None,
+        }
     }
 }
 
-impl<I> Iterator for NPeekable<I>
+impl<I> Iterator for DoublePeekable<I>
     where I: Iterator
 {
     type Item = I::Item;
