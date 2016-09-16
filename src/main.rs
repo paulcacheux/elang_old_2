@@ -9,6 +9,7 @@ mod source;
 mod token;
 mod lexer;
 mod ast;
+mod ast_pp;
 mod parser;
 mod diagnostic;
 mod ir;
@@ -63,6 +64,8 @@ fn main() {
         Ok(program) => program,
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
+
+    println!("{}", ast_pp::print(&program));
 
     let mut module = ir_gen::generate(program, &diagnostic_engine);
     if args.flag_O {

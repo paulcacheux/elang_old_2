@@ -10,34 +10,12 @@ pub struct Module {
     pub functions: Vec<Function>,
 }
 
-impl fmt::Display for Module {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "-----> Module:\n"));
-        for func in &self.functions {
-            try!(write!(f, "{}\n", func));
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub params: Vec<String>,
     pub vars: HashSet<String>,
     pub blocks: Vec<BasicBlock>,
-}
-
-impl fmt::Display for Function {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{}() {{\n", self.name));
-        try!(write!(f, "params: {}\n", self.params.iter().join(", ")));
-        try!(write!(f, "vars: {}\n", self.vars.iter().join(", ")));
-        for block in &self.blocks {
-            try!(write!(f, "{}\n", block));
-        }
-        write!(f, "}}\n")
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,16 +34,6 @@ pub struct BasicBlock {
     pub branch: Branch,
 }
 
-impl fmt::Display for BasicBlock {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{}:\n", self.id));
-        for inst in &self.instructions {
-            try!(write!(f, "\t{}\n", inst));
-        }
-        write!(f, "\t{}\n", self.branch)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Branch {
     Jmp(BasicBlockId),
@@ -73,31 +41,10 @@ pub enum Branch {
     Ret(Value),
 }
 
-impl fmt::Display for Branch {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Branch::Jmp(ref dest) => write!(f, "jmp {}", dest),
-            Branch::JmpT(ref cond, ref true_label, ref false_label) => {
-                write!(f, "jmpT {}, {}, {}", cond, true_label, false_label)
-            }
-            Branch::Ret(ref val) => write!(f, "return {}", val),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Const(i64),
     Var(String),
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Value::Const(value) => write!(f, "{}", value),
-            Value::Var(ref name) => write!(f, "{}", name),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +64,65 @@ pub enum Computation {
     CmpNotEq(Value, Value),
     LogNot(Value),
     Negate(Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Instruction {
+    Assign(String, Computation),
+    Compute(Computation),
+}
+
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "-----> Module:\n"));
+        for func in &self.functions {
+            try!(write!(f, "{}\n", func));
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "{}() {{\n", self.name));
+        try!(write!(f, "params: {}\n", self.params.iter().join(", ")));
+        try!(write!(f, "vars: {}\n", self.vars.iter().join(", ")));
+        for block in &self.blocks {
+            try!(write!(f, "{}\n", block));
+        }
+        write!(f, "}}\n")
+    }
+}
+
+impl fmt::Display for BasicBlock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "{}:\n", self.id));
+        for inst in &self.instructions {
+            try!(write!(f, "\t{}\n", inst));
+        }
+        write!(f, "\t{}\n", self.branch)
+    }
+}
+
+impl fmt::Display for Branch {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Branch::Jmp(ref dest) => write!(f, "jmp {}", dest),
+            Branch::JmpT(ref cond, ref true_label, ref false_label) => {
+                write!(f, "jmpT {}, {}, {}", cond, true_label, false_label)
+            }
+            Branch::Ret(ref val) => write!(f, "return {}", val),
+        }
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Value::Const(value) => write!(f, "{}", value),
+            Value::Var(ref name) => write!(f, "{}", name),
+        }
+    }
 }
 
 impl fmt::Display for Computation {
@@ -141,12 +147,6 @@ impl fmt::Display for Computation {
             Computation::Negate(ref value) => write!(f, "neg {}", value),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Instruction {
-    Assign(String, Computation),
-    Compute(Computation),
 }
 
 impl fmt::Display for Instruction {
