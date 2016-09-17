@@ -5,20 +5,20 @@
 
 {
   if -1 < 0
-    print(116)
+    print(116);
 
   if 0 < 0
-    print(827)
+    print(827);
 
   if 12 < 0
-    print(1000)
+    print(1000);
 
   if -10 + 2 < 0
-    print(1130)
+    print(1130);
 
   if x < 0
-    print(365)
+    print(365);
 
   if x - 1 < 0
-    print(24)
+    print(24);
 }

@@ -6,9 +6,9 @@
 //0
 
 {
-  print(x)
-  print(y + 1)
-  print(z * 100)
-  print(x + y + z*100 + 1)
-  print(longVariableName)
+  print(x);
+  print(y + 1);
+  print(z * 100);
+  print(x + y + z*100 + 1);
+  print(longVariableName);
 }

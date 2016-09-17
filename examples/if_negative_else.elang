@@ -6,22 +6,22 @@
 
 {
   if 0 < 0
-    print(1)
+    print(1);
   else
-    print(116)
-    
+    print(116);
+
   if -1 < 0
-    print(827)
+    print(827);
   else
-    print(2)
+    print(2);
 
   if x < 0
-    print(3)
+    print(3);
   else
-    print(1130)
+    print(1130);
 
   if y - 1 < 0
-    print(115)
+    print(115);
   else
-    print(4)
+    print(4);
 }

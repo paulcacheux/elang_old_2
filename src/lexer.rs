@@ -152,6 +152,7 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                 ',' => (Span::new_with_len(bytepos, 1), Token::Comma),
                 '{' => (Span::new_with_len(bytepos, 1), Token::LBrace),
                 '}' => (Span::new_with_len(bytepos, 1), Token::RBrace),
+                ';' => (Span::new_with_len(bytepos, 1), Token::SemiColon),
                 c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos),
             })
         } else {

@@ -12,23 +12,23 @@
 //0
 
 {
-  x = 4
+  x = 4;
   loop {
-    y = x
+    y = x;
     loop {
       if 2 - y > 0 {
-        break
+        break;
       }
 
-      print(y)
-      y = y - 1
+      print(y);
+      y = y - 1;
     }
 
-    print(y)
+    print(y);
 
     if 1 - x > 0
-      break
+      break;
     else
-      x = x - 1
+      x = x - 1;
   }
 }

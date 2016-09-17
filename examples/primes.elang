@@ -11,36 +11,36 @@
 //1
 
 {
-  primeCalc = 23
+  primeCalc = 23;
   loop {
     if primeCalc > 0 {
-      primeTest = primeCalc - 1
-      modMulti = 1
+      primeTest = primeCalc - 1;
+      modMulti = 1;
 
       // Multiply the modulus of all numbers less than this one together
       loop {
         if primeTest - 1 > 0 {
-          thisDiv = primeCalc % primeTest
-          modMulti = modMulti * thisDiv
+          thisDiv = primeCalc % primeTest;
+          modMulti = modMulti * thisDiv;
 
           if modMulti > 0 // Reset mod multi to it doesn't get too big
-            modMulti = 1
+            modMulti = 1;
           else // if 0, we already know this isn't a prime
-            break
+            break;
 
-          primeTest = primeTest - 1
+          primeTest = primeTest - 1;
         } else {
-          break
+          break;
         }
       }
 
       // This must be a prime number
       if modMulti > 0
-        print(primeCalc)
+        print(primeCalc);
 
-      primeCalc = primeCalc - 1
+      primeCalc = primeCalc - 1;
     } else {
-      break
+      break;
     }
   }
 }

@@ -11,20 +11,20 @@
 //34
 
 {
-  fibCount = 10
-  thisFib = 1
+  fibCount = 10;
+  thisFib = 1;
 
   loop {
-    print(lastFib)
-    fibCount = fibCount - 1
+    print(lastFib);
+    fibCount = fibCount - 1;
 
     if fibCount > 0 {
-      nextFib = thisFib + lastFib
+      nextFib = thisFib + lastFib;
 
-      lastFib = thisFib
-      thisFib = nextFib
+      lastFib = thisFib;
+      thisFib = nextFib;
     } else {
-      break
+      break;
     }
   }
 }

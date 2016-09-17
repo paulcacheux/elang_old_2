@@ -4,11 +4,11 @@
 //64
 
 fn square(x) {
-    return x*x
+    return x*x;
 }
 
 {
-    print(square(2))
-    print(square(4))
-    print(square(8))
+    print(square(2));
+    print(square(4));
+    print(square(8));
 }

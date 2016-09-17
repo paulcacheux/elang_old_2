@@ -28,13 +28,13 @@ loop-statement = "loop" statement
 while-statement = "while" expression statement
                 ;
 
-break-statement = "break"
+break-statement = "break" ";"
                 ;
 
-return-statement = "return" expression
+return-statement = "return" expression ";"
                  ;
 
-expr-statement = expression
+expr-statement = expression ";"
                ;
 
 expression = IDENTIFIER '=' expression
