@@ -7,6 +7,7 @@ use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Comput
 pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -> Module {
     let mut functions = Vec::new();
     let mut builder = Builder::new(diag_engine);
+    builder.symbols.functions.insert("println".to_string(), 1);
     builder.symbols.functions.insert("print".to_string(), 1);
     builder.symbols.functions.insert("read".to_string(), 0);
     for function in program.functions {
@@ -287,6 +288,7 @@ impl<'a> Builder<'a> {
                 let mut instructions = self.generate_expression(*value, Some(value_name.clone()));
                 instructions.push(Instruction::Assign(id.clone(),
                                                       Computation::Value(Value::Var(value_name))));
+                self.symbols.vars.insert(id.clone());
                 if let Some(name) = name {
                     instructions.push(Instruction::Assign(name, Computation::Value(Value::Var(id))))
                 }

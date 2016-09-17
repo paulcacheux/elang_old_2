@@ -1,0 +1,48 @@
+fn get_iter(px, py) {
+    xi = 5*px - 250;
+    yi = 5*py - 100;
+
+    x = 0;
+    y = 0;
+
+    iter = 0;
+    max_iter = 1000;
+
+    while x*x + y*y < 4*10000 {
+        if iter >= max_iter {
+            break;
+        }
+
+        xtemp = (x*x - y*y)/100 + xi;
+        y = 2*x*y/100 + yi;
+        x = xtemp;
+        iter = iter + 1;
+    }
+
+    return iter;
+}
+
+fn mod(x, m) {
+    while x < 0 {
+        x = x + m;
+    }
+    while x >= m {
+        x = x - m;
+    }
+    return x;
+}
+
+{
+    px = 0;
+    py = 0;
+
+    while py < 40 {
+        while px < 70 {
+            print(mod(get_iter(px, py), 10));
+            px = px + 1;
+        }
+        println(0);
+        py = py + 1;
+        px = 0;
+    }
+}

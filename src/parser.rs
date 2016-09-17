@@ -204,7 +204,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_break_statement(&mut self) -> Result<Statement, ParseError> {
-        // break-statement = "break"
+        // break-statement = "break" ";"
 
         let kw_span = expect!(self.lexer, Token::BreakKw, "break");
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
@@ -213,7 +213,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
-        // return-statement = "return" expression
+        // return-statement = "return" expression ";"
 
         let kw_span = expect!(self.lexer, Token::ReturnKw, "return");
         let expr = try!(self.parse_expression());

@@ -5,7 +5,8 @@ use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Comput
 pub fn generate(module: Module) -> String {
     let mut result = "#include <stdlib.h>\n#include <stdio.h>\n\n".to_string();
 
-    result.push_str("long print(long val) {\n\tprintf(\"%ld\\n\", val);\n\treturn 0;\n}\n");
+    result.push_str("long println(long val) {\n\tprintf(\"%ld\\n\", val);\n\treturn 0;\n}\n");
+    result.push_str("long print(long val) {\n\tprintf(\"%ld\", val);\n\treturn 0;\n}\n");
     result.push_str("long read(void) {\n\tlong res;\n\tscanf(\"%ld\", &res);\n\treturn res;\n}\n");
 
     for func in module.functions {
