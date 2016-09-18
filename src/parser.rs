@@ -1,5 +1,5 @@
 use double_peekable::DoublePeekable;
-use ast::{Program, Function, Block, Statement, Expression, BinOpKind, UnOpKind};
+use ast::{Program, Function, Block, Statement, Expression, SCBinOpKind, BinOpKind, UnOpKind};
 use source::Span;
 use token::Token;
 
@@ -244,7 +244,8 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        // expression = [ IDENTIFIER '=' ] eq_comp
+        // expression = IDENTIFIER '=' expression
+        //            | logical_or
 
         if self.lexer.peek().is_some() &&
            match_peek_token!(self.lexer => Token::Identifier(_), Token::AssignOp) {
@@ -261,8 +262,42 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
                 span: span,
             })
         } else {
-            self.parse_eq_comp()
+            self.parse_logical_or()
         }
+    }
+
+    pub fn parse_logical_or(&mut self) -> Result<Expression, ParseError> {
+        // logical_or = logical_and { "||" logical_and }
+        let mut lhs = try!(self.parse_logical_and());
+        while self.lexer.peek().is_some() && match_peek_token!(self.lexer => Token::LogOrOp) {
+            self.lexer.next();
+            let rhs = try!(self.parse_logical_and());
+            let span = Span::merge(lhs.span(), rhs.span());
+            lhs = Expression::SCBinOp {
+                kind: SCBinOpKind::LogicalOr,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                span: span,
+            };
+        }
+        Ok(lhs)
+    }
+
+    pub fn parse_logical_and(&mut self) -> Result<Expression, ParseError> {
+        // logical_and = eq_comp { "&&" eq_comp }
+        let mut lhs = try!(self.parse_eq_comp());
+        while self.lexer.peek().is_some() && match_peek_token!(self.lexer => Token::LogAndOp) {
+            self.lexer.next();
+            let rhs = try!(self.parse_eq_comp());
+            let span = Span::merge(lhs.span(), rhs.span());
+            lhs = Expression::SCBinOp {
+                kind: SCBinOpKind::LogicalAnd,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                span: span,
+            };
+        }
+        Ok(lhs)
     }
 
     pub fn parse_eq_comp(&mut self) -> Result<Expression, ParseError> {

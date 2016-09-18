@@ -56,6 +56,12 @@ impl Statement {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SCBinOpKind {
+    LogicalAnd,
+    LogicalOr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOpKind {
     Add,
     Sub,
@@ -84,6 +90,12 @@ pub enum Expression {
         value: Box<Expression>,
         span: Span,
     },
+    SCBinOp {
+        kind: SCBinOpKind,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+        span: Span,
+    },
     BinOp {
         kind: BinOpKind,
         lhs: Box<Expression>,
@@ -109,6 +121,7 @@ impl Expression {
     pub fn span(&self) -> Span {
         match *self {
             Expression::Assign { span, .. } |
+            Expression::SCBinOp { span, .. } |
             Expression::BinOp { span, .. } |
             Expression::UnOp { span, .. } |
             Expression::Paren { span, .. } |

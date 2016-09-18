@@ -142,6 +142,24 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                 '>' => self.if_next('=', Token::GreaterEqualOp, Token::GreaterOp, bytepos),
                 '=' => self.if_next('=', Token::EqualOp, Token::AssignOp, bytepos),
                 '!' => self.if_next('=', Token::NotEqualOp, Token::LogNotOp, bytepos),
+                '&' => {
+                    match self.input.peek() {
+                        Some(&(_, '&')) => {
+                            self.input.next();
+                            (Span::new_with_len(bytepos, 2), Token::LogAndOp)
+                        }
+                        _ => self.diagnostic.report_lex_error("Expected &".to_string(), bytepos),
+                    }
+                }
+                '|' => {
+                    match self.input.peek() {
+                        Some(&(_, '|')) => {
+                            self.input.next();
+                            (Span::new_with_len(bytepos, 2), Token::LogOrOp)
+                        }
+                        _ => self.diagnostic.report_lex_error("Expected |".to_string(), bytepos),
+                    }
+                }
                 '(' => (Span::new_with_len(bytepos, 1), Token::LParen),
                 ')' => (Span::new_with_len(bytepos, 1), Token::RParen),
                 '+' => (Span::new_with_len(bytepos, 1), Token::PlusOp),

@@ -8,11 +8,7 @@ fn get_iter(px, py) {
     iter = 0;
     max_iter = 1000;
 
-    while x*x + y*y < 4*10000 {
-        if iter >= max_iter {
-            break;
-        }
-
+    while x*x + y*y < 4*10000 && iter < max_iter {
         xtemp = (x*x - y*y)/100 + xi;
         y = 2*x*y/100 + yi;
         x = xtemp;

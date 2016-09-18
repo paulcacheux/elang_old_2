@@ -1,5 +1,5 @@
 use std::iter;
-use ast::{Program, Function, Block, Statement, Expression, BinOpKind, UnOpKind};
+use ast::{Program, Function, Block, Statement, Expression, SCBinOpKind, BinOpKind, UnOpKind};
 
 pub fn print(program: &Program) -> String {
     let mut pp = PrettyPrinter {
@@ -109,6 +109,14 @@ impl PrettyPrinter {
             Expression::Assign { ref id, ref value, .. } => {
                 self.output.push_str(&format!("{} = ", id));
                 self.print_expression(value);
+            }
+            Expression::SCBinOp { kind, ref lhs, ref rhs, .. } => {
+                self.print_expression(lhs);
+                self.output.push_str(match kind {
+                    SCBinOpKind::LogicalAnd => " && ",
+                    SCBinOpKind::LogicalOr => " || ",
+                });
+                self.print_expression(rhs);
             }
             Expression::BinOp { kind, ref lhs, ref rhs, .. } => {
                 self.print_expression(lhs);

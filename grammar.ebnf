@@ -38,8 +38,14 @@ expr-statement = expression ";"
                ;
 
 expression = IDENTIFIER '=' expression
-           | eq_comp
+           | logical_or
            ;
+
+logical_or = logical_and { "||" logical_and }
+           ;
+
+logical_and = eq_comp { "&&" eq_comp }
+            ;
 
 eq_comp = ord_comp [ (==|!=) ord_comp ]
         ;

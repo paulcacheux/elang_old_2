@@ -293,8 +293,7 @@ impl<'a> Sema<'a> {
             Return { expr, .. } => {
                 let expr_name = self.new_temp();
                 let expr_id = self.new_blockid();
-                let mut blocks =
-                    self.generate_expression(expr, expr_id, Some(expr_name.clone()));
+                let mut blocks = self.generate_expression(expr, expr_id, Some(expr_name.clone()));
                 blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
                     instructions: Vec::new(),
@@ -305,7 +304,7 @@ impl<'a> Sema<'a> {
             Expression { expr, .. } => {
                 let expr_id = self.new_blockid();
                 self.generate_expression(expr, expr_id, None)
-            },
+            }
             Block { block, .. } => self.generate_block(block),
         }
     }
@@ -324,6 +323,7 @@ impl<'a> Sema<'a> {
                            name: Option<String>)
                            -> Vec<TempBasicBlock> {
         use ast::Expression::*;
+        use ast::SCBinOpKind;
         use ast::BinOpKind;
         use ast::UnOpKind;
         match expression {
@@ -336,8 +336,75 @@ impl<'a> Sema<'a> {
                                                 Computation::Value(Value::Var(value_name)))));
                 self.symbols.vars.insert(id.clone());
                 if let Some(name) = name {
-                    blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(), Instruction::Assign(name, Computation::Value(Value::Var(id)))));
+                    blocks.push(
+                        TempBasicBlock::new_from_inst(
+                            self.new_blockid(),
+                            Instruction::Assign(name, Computation::Value(Value::Var(id)))
+                        )
+                    );
                 }
+                blocks
+            }
+            SCBinOp { kind, lhs, rhs, .. } => {
+                let lhs_name = self.new_temp();
+                let mut blocks = self.generate_expression(*lhs, block_id, Some(lhs_name.clone()));
+                let true_id = self.new_blockid();
+                let false_id = self.new_blockid();
+                let cont_id = self.new_blockid();
+
+                blocks.push(TempBasicBlock {
+                    id: self.new_blockid(),
+                    instructions: Vec::new(),
+                    branch: Some(Branch::JmpT(Value::Var(lhs_name.clone()), true_id, false_id)),
+                });
+                match kind {
+                    SCBinOpKind::LogicalAnd => {
+                        blocks.extend(self.generate_expression(*rhs, true_id, name.clone()));
+                        blocks.push(TempBasicBlock {
+                            id: self.new_blockid(),
+                            instructions: Vec::new(),
+                            branch: Some(Branch::Jmp(cont_id)),
+                        });
+
+                        let false_comp = Computation::Value(Value::Const(0));
+
+                        blocks.push(TempBasicBlock {
+                            id: false_id,
+                            instructions: vec![if let Some(name) = name {
+                                                   Instruction::Assign(name, false_comp)
+                                               } else {
+                                                   Instruction::Compute(false_comp)
+                                               }],
+                            branch: Some(Branch::Jmp(cont_id)),
+                        });
+                    }
+                    SCBinOpKind::LogicalOr => {
+                        let true_comp = Computation::Value(Value::Const(1));
+
+                        blocks.push(TempBasicBlock {
+                            id: true_id,
+                            instructions: vec![if let Some(name) = name.clone() {
+                                                   Instruction::Assign(name, true_comp)
+                                               } else {
+                                                   Instruction::Compute(true_comp)
+                                               }],
+                            branch: Some(Branch::Jmp(cont_id)),
+                        });
+
+                        blocks.extend(self.generate_expression(*rhs, false_id, name));
+                        blocks.push(TempBasicBlock {
+                            id: self.new_blockid(),
+                            instructions: Vec::new(),
+                            branch: Some(Branch::Jmp(cont_id)),
+                        });
+                    }
+                }
+                blocks.push(TempBasicBlock {
+                    id: cont_id,
+                    instructions: Vec::new(),
+                    branch: None,
+                });
+
                 blocks
             }
             BinOp { kind, lhs, rhs, .. } => {
@@ -444,19 +511,19 @@ impl<'a> Sema<'a> {
                 self.symbols.vars.insert(id.clone());
                 let comp = Computation::Value(Value::Var(id.clone()));
                 let inst = if let Some(name) = name {
-                                            Instruction::Assign(name, comp)
-                                        } else {
-                                            Instruction::Compute(comp)
-                                        };
+                    Instruction::Assign(name, comp)
+                } else {
+                    Instruction::Compute(comp)
+                };
                 vec![TempBasicBlock::new_from_inst(block_id, inst)]
             }
             Number { value, .. } => {
                 let comp = Computation::Value(Value::Const(value));
                 let inst = if let Some(name) = name {
-                                            Instruction::Assign(name, comp)
-                                        } else {
-                                            Instruction::Compute(comp)
-                                        };
+                    Instruction::Assign(name, comp)
+                } else {
+                    Instruction::Compute(comp)
+                };
                 vec![TempBasicBlock::new_from_inst(block_id, inst)]
             }
         }
