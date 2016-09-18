@@ -20,11 +20,11 @@
         break;
       }
 
-      print(y);
+      println(y);
       y = y - 1;
     }
 
-    print(y);
+    println(y);
 
     if 1 - x > 0
       break;

@@ -6,7 +6,7 @@ use ir::{Module, Function, BasicBlockId, BasicBlock, Branch, Instruction, Comput
 
 pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -> Module {
     let mut functions = Vec::new();
-    let mut builder = Builder::new(diag_engine);
+    let mut builder = Sema::new(diag_engine);
     builder.symbols.functions.insert("println".to_string(), 1);
     builder.symbols.functions.insert("print".to_string(), 1);
     builder.symbols.functions.insert("read".to_string(), 0);
@@ -16,6 +16,53 @@ pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -
     functions.push(builder.generate_function(program.main_func));
 
     Module { functions: functions }
+}
+
+#[derive(Debug, Clone)]
+struct TempBasicBlock {
+    id: BasicBlockId,
+    instructions: Vec<Instruction>,
+    branch: Option<Branch>,
+}
+
+impl TempBasicBlock {
+    fn new(id: BasicBlockId, insts: Vec<Instruction>) -> TempBasicBlock {
+        TempBasicBlock {
+            id: id,
+            instructions: insts,
+            branch: None,
+        }
+    }
+
+    fn new_from_inst(id: BasicBlockId, inst: Instruction) -> TempBasicBlock {
+        TempBasicBlock {
+            id: id,
+            instructions: vec![inst],
+            branch: None,
+        }
+    }
+}
+
+fn finalize(temp_blocks: Vec<TempBasicBlock>) -> Vec<BasicBlock> {
+    let mut last_blockid = BasicBlockId(0);
+
+    let mut blocks: Vec<_> = temp_blocks.into_iter()
+        .rev()
+        .map(|block| {
+            let bb = BasicBlock {
+                id: block.id,
+                instructions: block.instructions,
+                branch: match block.branch {
+                    Some(br) => br,
+                    None => Branch::Jmp(last_blockid),
+                },
+            };
+            last_blockid = block.id;
+            bb
+        })
+        .collect();
+    blocks.reverse();
+    blocks
 }
 
 struct SymbolTable {
@@ -36,7 +83,7 @@ impl SymbolTable {
     }
 }
 
-struct Builder<'a> {
+struct Sema<'a> {
     diag_engine: &'a DiagnosticEngine<'a>,
     symbols: SymbolTable,
     current_break_blockid: Vec<BasicBlockId>,
@@ -44,9 +91,9 @@ struct Builder<'a> {
     blockid_counter: usize,
 }
 
-impl<'a> Builder<'a> {
-    pub fn new(diag_engine: &'a DiagnosticEngine<'a>) -> Builder<'a> {
-        Builder {
+impl<'a> Sema<'a> {
+    pub fn new(diag_engine: &'a DiagnosticEngine<'a>) -> Sema<'a> {
+        Sema {
             diag_engine: diag_engine,
             symbols: SymbolTable::new(),
             current_break_blockid: Vec::new(),
@@ -87,86 +134,82 @@ impl<'a> Builder<'a> {
             blocks.extend(self.generate_statement(stmt));
         }
 
-        let end_block = BasicBlock {
+        let end_block = TempBasicBlock {
             id: self.new_blockid(),
             instructions: Vec::new(),
-            branch: Branch::Ret(Value::Const(0)),
+            branch: Some(Branch::Ret(Value::Const(0))),
         };
         blocks.push(end_block);
+
+        let finalized_blocks = finalize(blocks);
 
         let func = Function {
             name: function.name,
             params: function.params,
             vars: self.symbols.vars.clone(),
-            blocks: blocks,
+            blocks: finalized_blocks,
         };
 
         self.symbols.clear_vars();
         func
     }
 
-    fn generate_statement(&mut self, statement: ast::Statement) -> Vec<BasicBlock> {
+    fn generate_statement(&mut self, statement: ast::Statement) -> Vec<TempBasicBlock> {
         use ast::Statement::*;
         match statement {
             If { cond, if_stmt, else_stmt, .. } => {
                 let cond_name = self.new_temp();
-                let cond_inst = self.generate_expression(cond, Some(cond_name.clone()));
                 let cond_blockid = self.new_blockid();
                 let true_blockid = self.new_blockid();
                 let skip_false_blockid = self.new_blockid();
                 let false_blockid = self.new_blockid();
                 let end_blockid = self.new_blockid();
 
-                let cond_branch =
-                    Branch::JmpT(Value::Var(cond_name.clone()), true_blockid, false_blockid);
+                let mut blocks =
+                    self.generate_expression(cond, cond_blockid, Some(cond_name.clone()));
 
-                let mut blocks = vec![BasicBlock {
-                                          id: cond_blockid,
-                                          instructions: cond_inst,
-                                          branch: cond_branch,
-                                      },
-                                      BasicBlock {
-                                          id: true_blockid,
-                                          instructions: Vec::new(),
-                                          branch: Branch::Jmp(self.peek_blockid()),
-                                      }];
+                blocks.push(TempBasicBlock {
+                    id: self.new_blockid(),
+                    instructions: Vec::new(),
+                    branch: Some(Branch::JmpT(Value::Var(cond_name.clone()),
+                                              true_blockid,
+                                              false_blockid)),
+                });
+
+                blocks.push(TempBasicBlock {
+                    id: true_blockid,
+                    instructions: Vec::new(),
+                    branch: None,
+                });
 
                 blocks.extend(self.generate_statement(*if_stmt));
 
-                // linker
-                blocks.push(BasicBlock {
-                    id: self.new_blockid(),
-                    instructions: Vec::new(),
-                    branch: Branch::Jmp(skip_false_blockid),
-                });
-
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: skip_false_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(end_blockid),
+                    branch: Some(Branch::Jmp(end_blockid)),
                 });
 
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: false_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_blockid()),
+                    branch: None,
                 });
 
                 if let Some(else_stmt) = else_stmt {
                     blocks.extend(self.generate_statement(*else_stmt));
                 }
 
-                // to link the "peek label" of the last statement with the end_label
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(end_blockid),
+                    branch: Some(Branch::Jmp(end_blockid)),
                 });
 
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: end_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_blockid()),
+                    branch: None,
                 });
                 blocks
             }
@@ -174,73 +217,73 @@ impl<'a> Builder<'a> {
                 let loop_start_blockid = self.new_blockid();
                 let loop_end_blockid = self.new_blockid();
 
-                let mut blocks = vec![BasicBlock {
+                let mut blocks = vec![TempBasicBlock {
                                           id: loop_start_blockid,
                                           instructions: Vec::new(),
-                                          branch: Branch::Jmp(self.peek_blockid()),
+                                          branch: None,
                                       }];
 
                 self.current_break_blockid.push(loop_end_blockid);
                 blocks.extend(self.generate_statement(*stmt));
                 self.current_break_blockid.pop();
 
-                // loop reloader
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(loop_start_blockid),
+                    branch: Some(Branch::Jmp(loop_start_blockid)),
                 });
 
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: loop_end_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_blockid()),
+                    branch: None,
                 });
                 blocks
             }
             While { cond, stmt, .. } => {
                 let cond_name = self.new_temp();
-                let cond_inst = self.generate_expression(cond, Some(cond_name.clone()));
                 let cond_blockid = self.new_blockid();
                 let content_blockid = self.new_blockid();
                 let end_blockid = self.new_blockid();
 
-                let cond_branch =
-                    Branch::JmpT(Value::Var(cond_name.clone()), content_blockid, end_blockid);
+                let mut blocks =
+                    self.generate_expression(cond, cond_blockid, Some(cond_name.clone()));
 
-                let mut blocks = vec![BasicBlock {
-                                          id: cond_blockid,
-                                          instructions: cond_inst,
-                                          branch: cond_branch,
-                                      },
-                                      BasicBlock {
-                                          id: content_blockid,
-                                          instructions: Vec::new(),
-                                          branch: Branch::Jmp(self.peek_blockid()),
-                                      }];
+                blocks.push(TempBasicBlock {
+                    id: self.new_blockid(),
+                    instructions: Vec::new(),
+                    branch: Some(Branch::JmpT(Value::Var(cond_name.clone()),
+                                              content_blockid,
+                                              end_blockid)),
+                });
+                blocks.push(TempBasicBlock {
+                    id: content_blockid,
+                    instructions: Vec::new(),
+                    branch: None,
+                });
 
                 self.current_break_blockid.push(end_blockid);
                 blocks.extend(self.generate_statement(*stmt));
                 self.current_break_blockid.pop();
 
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(cond_blockid),
+                    branch: Some(Branch::Jmp(cond_blockid)),
                 });
-                blocks.push(BasicBlock {
+                blocks.push(TempBasicBlock {
                     id: end_blockid,
                     instructions: Vec::new(),
-                    branch: Branch::Jmp(self.peek_blockid()),
+                    branch: None,
                 });
                 blocks
             }
             Break { span } => {
                 if let Some(&break_dest) = self.current_break_blockid.last() {
-                    vec![BasicBlock {
+                    vec![TempBasicBlock {
                              id: self.new_blockid(),
                              instructions: Vec::new(),
-                             branch: Branch::Jmp(break_dest),
+                             branch: Some(Branch::Jmp(break_dest)),
                          }]
                 } else {
                     self.diag_engine
@@ -249,25 +292,25 @@ impl<'a> Builder<'a> {
             }
             Return { expr, .. } => {
                 let expr_name = self.new_temp();
-                let instructions = self.generate_expression(expr, Some(expr_name.clone()));
-                vec![BasicBlock {
-                         id: self.new_blockid(),
-                         instructions: instructions,
-                         branch: Branch::Ret(Value::Var(expr_name)),
-                     }]
+                let expr_id = self.new_blockid();
+                let mut blocks =
+                    self.generate_expression(expr, expr_id, Some(expr_name.clone()));
+                blocks.push(TempBasicBlock {
+                    id: self.new_blockid(),
+                    instructions: Vec::new(),
+                    branch: Some(Branch::Ret(Value::Var(expr_name))),
+                });
+                blocks
             }
             Expression { expr, .. } => {
-                vec![BasicBlock {
-                         id: self.new_blockid(),
-                         instructions: self.generate_expression(expr, None),
-                         branch: Branch::Jmp(self.peek_blockid()),
-                     }]
-            }
+                let expr_id = self.new_blockid();
+                self.generate_expression(expr, expr_id, None)
+            },
             Block { block, .. } => self.generate_block(block),
         }
     }
 
-    fn generate_block(&mut self, block: ast::Block) -> Vec<BasicBlock> {
+    fn generate_block(&mut self, block: ast::Block) -> Vec<TempBasicBlock> {
         let mut blocks = Vec::new();
         for stmt in block.stmts {
             blocks.extend(self.generate_statement(stmt));
@@ -277,28 +320,32 @@ impl<'a> Builder<'a> {
 
     fn generate_expression(&mut self,
                            expression: ast::Expression,
+                           block_id: BasicBlockId,
                            name: Option<String>)
-                           -> Vec<Instruction> {
+                           -> Vec<TempBasicBlock> {
         use ast::Expression::*;
         use ast::BinOpKind;
         use ast::UnOpKind;
         match expression {
             Assign { id, value, .. } => {
                 let value_name = self.new_temp();
-                let mut instructions = self.generate_expression(*value, Some(value_name.clone()));
-                instructions.push(Instruction::Assign(id.clone(),
-                                                      Computation::Value(Value::Var(value_name))));
+                let mut blocks =
+                    self.generate_expression(*value, block_id, Some(value_name.clone()));
+                blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(),
+                                                          Instruction::Assign(id.clone(),
+                                                Computation::Value(Value::Var(value_name)))));
                 self.symbols.vars.insert(id.clone());
                 if let Some(name) = name {
-                    instructions.push(Instruction::Assign(name, Computation::Value(Value::Var(id))))
+                    blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(), Instruction::Assign(name, Computation::Value(Value::Var(id)))));
                 }
-                instructions
+                blocks
             }
             BinOp { kind, lhs, rhs, .. } => {
                 let lhs_name = self.new_temp();
                 let rhs_name = self.new_temp();
-                let mut instructions = self.generate_expression(*lhs, Some(lhs_name.clone()));
-                instructions.extend(self.generate_expression(*rhs, Some(rhs_name.clone())));
+                let rhs_id = self.new_blockid();
+                let mut blocks = self.generate_expression(*lhs, block_id, Some(lhs_name.clone()));
+                blocks.extend(self.generate_expression(*rhs, rhs_id, Some(rhs_name.clone())));
                 let comp = match kind {
                     BinOpKind::Add => Computation::Add(Value::Var(lhs_name), Value::Var(rhs_name)),
                     BinOpKind::Sub => Computation::Sub(Value::Var(lhs_name), Value::Var(rhs_name)),
@@ -324,29 +371,31 @@ impl<'a> Builder<'a> {
                         Computation::CmpNotEq(Value::Var(lhs_name), Value::Var(rhs_name))
                     }
                 };
-                instructions.push(if let Some(name) = name {
+                let inst = if let Some(name) = name {
                     Instruction::Assign(name, comp)
                 } else {
                     Instruction::Compute(comp)
-                });
-                instructions
+                };
+                blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(), inst));
+                blocks
             }
             UnOp { kind, expr, .. } => {
                 let expr_name = self.new_temp();
-                let mut instructions = self.generate_expression(*expr, Some(expr_name.clone()));
+                let mut blocks = self.generate_expression(*expr, block_id, Some(expr_name.clone()));
                 let comp = match kind {
                     UnOpKind::Plus => Computation::Value(Value::Var(expr_name)),
                     UnOpKind::Minus => Computation::Negate(Value::Var(expr_name)),
                     UnOpKind::LogNot => Computation::LogNot(Value::Var(expr_name)),
                 };
-                instructions.push(if let Some(name) = name {
+                let inst = if let Some(name) = name {
                     Instruction::Assign(name, comp)
                 } else {
                     Instruction::Compute(comp)
-                });
-                instructions
+                };
+                blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(), inst));
+                blocks
             }
-            Paren { expr, .. } => self.generate_expression(*expr, name),
+            Paren { expr, .. } => self.generate_expression(*expr, block_id, name),
             FuncCall { func_name, args, span } => {
                 if !self.symbols.functions.contains_key(&func_name) {
                     self.diag_engine
@@ -365,21 +414,24 @@ impl<'a> Builder<'a> {
                                            span);
                 }
 
-                let mut instructions = Vec::new();
+                let mut blocks = vec![TempBasicBlock::new(block_id, Vec::new())];
                 let mut arg_values = Vec::new();
                 for arg in args {
                     let arg_name = self.new_temp();
-                    instructions.extend(self.generate_expression(arg, Some(arg_name.clone())));
+                    let arg_id = self.new_blockid();
+                    blocks.extend(self.generate_expression(arg, arg_id, Some(arg_name.clone())));
                     arg_values.push(Value::Var(arg_name));
                 }
 
                 let comp = Computation::FuncCall(func_name.clone(), arg_values);
-                instructions.push(if let Some(name) = name {
+                let inst = if let Some(name) = name {
                     Instruction::Assign(name, comp)
                 } else {
                     Instruction::Compute(comp)
-                });
-                instructions
+                };
+
+                blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(), inst));
+                blocks
             }
             Identifier { id, span } => {
                 if !self.symbols.vars.contains(&id) {
@@ -391,19 +443,21 @@ impl<'a> Builder<'a> {
                 }
                 self.symbols.vars.insert(id.clone());
                 let comp = Computation::Value(Value::Var(id.clone()));
-                vec![if let Some(name) = name {
-                         Instruction::Assign(name, comp)
-                     } else {
-                         Instruction::Compute(comp)
-                     }]
+                let inst = if let Some(name) = name {
+                                            Instruction::Assign(name, comp)
+                                        } else {
+                                            Instruction::Compute(comp)
+                                        };
+                vec![TempBasicBlock::new_from_inst(block_id, inst)]
             }
             Number { value, .. } => {
                 let comp = Computation::Value(Value::Const(value));
-                vec![if let Some(name) = name {
-                         Instruction::Assign(name, comp)
-                     } else {
-                         Instruction::Compute(comp)
-                     }]
+                let inst = if let Some(name) = name {
+                                            Instruction::Assign(name, comp)
+                                        } else {
+                                            Instruction::Compute(comp)
+                                        };
+                vec![TempBasicBlock::new_from_inst(block_id, inst)]
             }
         }
     }

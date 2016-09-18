@@ -15,7 +15,7 @@
   thisFib = 1;
 
   loop {
-    print(lastFib);
+    println(lastFib);
     fibCount = fibCount - 1;
 
     if fibCount > 0 {

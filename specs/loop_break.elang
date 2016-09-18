@@ -4,17 +4,17 @@
 //3
 
 {
-  print(0);
+  println(0);
 
   loop {
     break;
-    print(1);
+    println(1);
   }
 
   loop {
-    print(2);
+    println(2);
     break;
   }
 
-  print(3);
+  println(3);
 }

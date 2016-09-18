@@ -22,23 +22,13 @@ fn get_iter(px, py) {
     return iter;
 }
 
-fn mod(x, m) {
-    while x < 0 {
-        x = x + m;
-    }
-    while x >= m {
-        x = x - m;
-    }
-    return x;
-}
-
 {
     px = 0;
     py = 0;
 
     while py < 40 {
         while px < 70 {
-            print(mod(get_iter(px, py), 10));
+            print(get_iter(px, py) % 10);
             px = px + 1;
         }
         println(0);

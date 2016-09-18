@@ -3,6 +3,6 @@
 //827
 
 {
-  print(116);
-  print(827);
+  println(116);
+  println(827);
 }

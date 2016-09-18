@@ -17,8 +17,8 @@
       }
     }
 
-    print(y);
+    println(y);
   } else {
-    print(-1);
+    println(-1);
   }
 }

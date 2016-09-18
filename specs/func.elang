@@ -8,7 +8,7 @@ fn square(x) {
 }
 
 {
-    print(square(2));
-    print(square(4));
-    print(square(8));
+    println(square(2));
+    println(square(4));
+    println(square(8));
 }

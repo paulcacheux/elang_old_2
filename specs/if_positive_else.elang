@@ -6,22 +6,22 @@
 
 {
   if 0 > 0
-    print(1);
+    println(1);
   else
-    print(116);
+    println(116);
 
   if 1 > 0
-    print(827);
+    println(827);
   else
-    print(2);
+    println(2);
 
   if x > 0
-    print(3);
+    println(3);
   else
-    print(1130);
+    println(1130);
 
   if y+1 > 0
-    print(115);
+    println(115);
   else
-    print(4);
+    println(4);
 }
