@@ -6,10 +6,10 @@
 //10000
 
 {
-  x=10;
-  y = x;
-  z= x * y + 10 - 2*5;
-  sum =x + y + z;
+  let x=10;
+  let y = x;
+  let z= x * y + 10 - 2*5;
+  let sum =x + y + z;
 
   println(x);
   println(y);

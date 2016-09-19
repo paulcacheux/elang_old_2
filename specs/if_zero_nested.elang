@@ -7,6 +7,9 @@
 //6
 
 {
+  let x = 0;
+  let y = 0;
+
   println(1);
   if 0 == 0 {
     println(2);

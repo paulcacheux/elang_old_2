@@ -139,6 +139,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         //           | assign-statement
 
         match self.lexer.peek() {
+            Some(&(_, Token::LetKw)) => self.parse_let_statement(),
             Some(&(_, Token::IfKw)) => self.parse_if_statement(),
             Some(&(_, Token::LoopKw)) => self.parse_loop_statement(),
             Some(&(_, Token::WhileKw)) => self.parse_while_statement(),
@@ -147,6 +148,27 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             Some(&(_, Token::LBrace)) => self.parse_block_statement(),
             _ => self.parse_statement_expression(),
         }
+    }
+
+    pub fn parse_let_statement(&mut self) -> Result<Statement, ParseError> {
+        // let-statement = "let" IDENTIFIER "=" expression ";"
+
+        let kw_span = expect!(self.lexer, Token::LetKw, "let");
+
+        let id = match self.lexer.next() {
+            Some((_, Token::Identifier(id))) => id,
+            other => return make_unexpected!("identifier", other),
+        };
+
+        expect!(self.lexer, Token::AssignOp, "=");
+        let expr = try!(self.parse_expression());
+        let end_span = expect!(self.lexer, Token::SemiColon, ";");
+
+        Ok(Statement::Let {
+            id: id,
+            expr: expr,
+            span: Span::merge(kw_span, end_span),
+        })
     }
 
     pub fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {

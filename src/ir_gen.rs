@@ -66,20 +66,35 @@ fn finalize(temp_blocks: Vec<TempBasicBlock>) -> Vec<BasicBlock> {
 }
 
 struct SymbolTable {
-    vars: HashSet<String>,
+    all_vars: HashSet<String>,
+    scopes: Vec<HashSet<String>>,
     functions: HashMap<String, usize>,
 }
 
 impl SymbolTable {
     fn new() -> SymbolTable {
         SymbolTable {
-            vars: HashSet::new(),
+            all_vars: HashSet::new(),
+            scopes: Vec::new(),
             functions: HashMap::new(),
         }
     }
 
-    fn clear_vars(&mut self) {
-        self.vars.clear();
+    fn begin_scope(&mut self) {
+        self.scopes.push(HashSet::new());
+    }
+
+    fn end_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn add_var(&mut self, name: String) {
+        self.scopes.last_mut().unwrap().insert(name.clone());
+        self.all_vars.insert(name);
+    }
+
+    fn is_var_available(&self, name: &String) -> bool {
+        self.scopes.iter().rev().any(|ref scope| scope.contains(name))
     }
 }
 
@@ -105,7 +120,7 @@ impl<'a> Sema<'a> {
     fn new_temp(&mut self) -> String {
         let temp = format!("_0temp{}", self.temp_counter);
         self.temp_counter += 1;
-        self.symbols.vars.insert(temp.clone());
+        self.symbols.add_var(temp.clone());
         temp
     }
 
@@ -126,7 +141,11 @@ impl<'a> Sema<'a> {
         }
 
         self.symbols.functions.insert(function.name.clone(), function.params.len());
-        self.symbols.vars.extend(function.params.clone());
+        self.symbols.begin_scope();
+        for param in function.params.clone() {
+            self.symbols.add_var(param);
+        }
+        self.symbols.begin_scope();
 
         let mut blocks = Vec::new();
 
@@ -146,18 +165,26 @@ impl<'a> Sema<'a> {
         let func = Function {
             name: function.name,
             params: function.params,
-            vars: self.symbols.vars.clone(),
+            vars: self.symbols.all_vars.clone(),
             blocks: finalized_blocks,
         };
 
-        self.symbols.clear_vars();
+        self.symbols.end_scope();
+        self.symbols.end_scope();
         func
     }
 
     fn generate_statement(&mut self, statement: ast::Statement) -> Vec<TempBasicBlock> {
         use ast::Statement::*;
         match statement {
+            Let { id, expr, .. } => {
+                let blockid = self.new_blockid();
+                let blocks = self.generate_expression(expr, blockid, Some(id.clone()));
+                self.symbols.add_var(id);
+                blocks
+            }
             If { cond, if_stmt, else_stmt, .. } => {
+                self.symbols.begin_scope();
                 let cond_name = self.new_temp();
                 let cond_blockid = self.new_blockid();
                 let true_blockid = self.new_blockid();
@@ -211,9 +238,11 @@ impl<'a> Sema<'a> {
                     instructions: Vec::new(),
                     branch: None,
                 });
+                self.symbols.end_scope();
                 blocks
             }
             Loop { stmt, .. } => {
+                self.symbols.begin_scope();
                 let loop_start_blockid = self.new_blockid();
                 let loop_end_blockid = self.new_blockid();
 
@@ -238,9 +267,11 @@ impl<'a> Sema<'a> {
                     instructions: Vec::new(),
                     branch: None,
                 });
+                self.symbols.end_scope();
                 blocks
             }
             While { cond, stmt, .. } => {
+                self.symbols.begin_scope();
                 let cond_name = self.new_temp();
                 let cond_blockid = self.new_blockid();
                 let content_blockid = self.new_blockid();
@@ -276,6 +307,7 @@ impl<'a> Sema<'a> {
                     instructions: Vec::new(),
                     branch: None,
                 });
+                self.symbols.end_scope();
                 blocks
             }
             Break { span } => {
@@ -310,10 +342,12 @@ impl<'a> Sema<'a> {
     }
 
     fn generate_block(&mut self, block: ast::Block) -> Vec<TempBasicBlock> {
+        self.symbols.begin_scope();
         let mut blocks = Vec::new();
         for stmt in block.stmts {
             blocks.extend(self.generate_statement(stmt));
         }
+        self.symbols.end_scope();
         blocks
     }
 
@@ -327,14 +361,15 @@ impl<'a> Sema<'a> {
         use ast::BinOpKind;
         use ast::UnOpKind;
         match expression {
-            Assign { id, value, .. } => {
-                let value_name = self.new_temp();
-                let mut blocks =
-                    self.generate_expression(*value, block_id, Some(value_name.clone()));
-                blocks.push(TempBasicBlock::new_from_inst(self.new_blockid(),
-                                                          Instruction::Assign(id.clone(),
-                                                Computation::Value(Value::Var(value_name)))));
-                self.symbols.vars.insert(id.clone());
+            Assign { id, value, span } => {
+                if !self.symbols.is_var_available(&id) {
+                    self.diag_engine
+                        .report_sema_error(format!("{} is assigned before declaration, maybe \
+                                                    use a let statement",
+                                                   id),
+                                           span);
+                }
+                let mut blocks = self.generate_expression(*value, block_id, Some(id.clone()));
                 if let Some(name) = name {
                     blocks.push(
                         TempBasicBlock::new_from_inst(
@@ -501,14 +536,10 @@ impl<'a> Sema<'a> {
                 blocks
             }
             Identifier { id, span } => {
-                if !self.symbols.vars.contains(&id) {
+                if !self.symbols.is_var_available(&id) {
                     self.diag_engine
-                        .report_sema_warning(format!("{} is referenced before assignment, it \
-                                                      will default to 0",
-                                                     id),
-                                             span);
+                        .report_sema_error(format!("{} is referenced before assignment", id), span);
                 }
-                self.symbols.vars.insert(id.clone());
                 let comp = Computation::Value(Value::Var(id.clone()));
                 let inst = if let Some(name) = name {
                     Instruction::Assign(name, comp)

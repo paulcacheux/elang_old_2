@@ -3,6 +3,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     FnKw,
+    LetKw,
     LoopKw,
     BreakKw,
     ReturnKw,
@@ -38,6 +39,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Token::FnKw => write!(f, "fn"),
+            Token::LetKw => write!(f, "let"),
             Token::LoopKw => write!(f, "loop"),
             Token::BreakKw => write!(f, "break"),
             Token::ReturnKw => write!(f, "return"),

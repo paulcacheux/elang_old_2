@@ -9,6 +9,7 @@ fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     let span = Span::new_with_len(bytepos, raw.len());
     let token = match raw.as_str() {
         "fn" => Token::FnKw,
+        "let" => Token::LetKw,
         "loop" => Token::LoopKw,
         "if" => Token::IfKw,
         "break" => Token::BreakKw,

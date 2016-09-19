@@ -16,6 +16,8 @@
   if -2 + 10 > 0
     println(1130);
 
+  let x = 0;
+
   if x > 0
     println(365);
 

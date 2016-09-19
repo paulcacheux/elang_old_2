@@ -27,7 +27,7 @@ impl<'a> DiagnosticEngine<'a> {
 
     pub fn report_lex_error(&self, description: String, bytepos: usize) -> ! {
         let span = Span::new_with_len(bytepos, 1);
-        let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
+        let error = RenderError::from_span(span, description, self.source);
 
         println_stderr!("{}", error);
         process::exit(-1);
@@ -41,23 +41,14 @@ impl<'a> DiagnosticEngine<'a> {
             }
         };
 
-        let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
+        let error = RenderError::from_span(span, description, self.source);
 
         println_stderr!("{}", error);
         process::exit(-1);
     }
 
-    pub fn report_sema_warning(&self, description: String, span: Span) {
-        if self.warning_activated {
-            let error =
-                RenderError::from_span(span, description, self.source, ErrorImportance::Warning);
-
-            println_stderr!("{}", error);
-        }
-    }
-
     pub fn report_sema_error(&self, description: String, span: Span) -> ! {
-        let error = RenderError::from_span(span, description, self.source, ErrorImportance::Error);
+        let error = RenderError::from_span(span, description, self.source);
 
         println_stderr!("{}", error);
         process::exit(-1);
@@ -81,25 +72,14 @@ impl fmt::Display for ErrorLine {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ErrorImportance {
-    Error,
-    Warning,
-}
-
 #[derive(Debug, Clone)]
 struct RenderError {
-    pub importance: ErrorImportance,
     pub description: String,
     pub lines: Vec<ErrorLine>,
 }
 
 impl RenderError {
-    pub fn from_span(span: Span,
-                     description: String,
-                     source: &str,
-                     importance: ErrorImportance)
-                     -> RenderError {
+    pub fn from_span(span: Span, description: String, source: &str) -> RenderError {
         let arrow: String = source.char_indices()
             .map(|(pos, c)| {
                 if c == '\n' {
@@ -129,7 +109,6 @@ impl RenderError {
             .collect();
 
         RenderError {
-            importance: importance,
             description: description,
             lines: lines,
         }
@@ -140,12 +119,9 @@ impl fmt::Display for RenderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let light_red = "\x1b[91m";
         let clear = "\x1b[0m";
-        let importance = match self.importance {
-            ErrorImportance::Error => format!("{}Error{}", light_red, clear),
-            ErrorImportance::Warning => format!("{}Warning{}", light_red, clear),
-        };
+        let error_text = format!("{}Error{}", light_red, clear);
 
-        try!(write!(f, "{}: {}\n", importance, self.description));
+        try!(write!(f, "{}: {}\n", error_text, self.description));
         for line in &self.lines {
             try!(line.fmt(f));
         }

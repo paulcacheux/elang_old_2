@@ -2,11 +2,11 @@
 //120
 
 {
-  factorialOf = 5;
+  let factorialOf = 5;
 
   if factorialOf > 0 {
-    x = factorialOf;
-    y = 1;
+    let x = factorialOf;
+    let y = 1;
 
     loop {
       if x > 0 {

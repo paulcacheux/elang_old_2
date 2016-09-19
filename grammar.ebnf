@@ -10,7 +10,8 @@ param_list = [ IDENTIFIER { ',' IDENTIFIER } ]
 block = '{' statement* '}'
       ;
 
-statement = if-statement
+statement = let-statement
+          | if-statement
           | loop-statement
           | while-statement
           | break-statement
@@ -33,6 +34,9 @@ break-statement = "break" ";"
 
 return-statement = "return" expression ";"
                  ;
+
+let-statement = "let" IDENTIFIER "=" expression ";"
+              ;
 
 expr-statement = expression ";"
                ;

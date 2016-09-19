@@ -23,6 +23,11 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
+    Let {
+        id: String,
+        expr: Expression,
+        span: Span,
+    },
     If {
         cond: Expression,
         if_stmt: Box<Statement>,
@@ -44,6 +49,7 @@ pub enum Statement {
 impl Statement {
     pub fn span(&self) -> Span {
         match *self {
+            Statement::Let { span, .. } |
             Statement::If { span, .. } |
             Statement::Loop { span, .. } |
             Statement::While { span, .. } |

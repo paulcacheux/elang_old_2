@@ -11,16 +11,16 @@
 //1
 
 {
-  primeCalc = 23;
+  let primeCalc = 23;
   loop {
     if primeCalc > 0 {
-      primeTest = primeCalc - 1;
-      modMulti = 1;
+      let primeTest = primeCalc - 1;
+      let modMulti = 1;
 
       // Multiply the modulus of all numbers less than this one together
       loop {
         if primeTest - 1 > 0 {
-          thisDiv = primeCalc % primeTest;
+          let thisDiv = primeCalc % primeTest;
           modMulti = modMulti * thisDiv;
 
           if modMulti > 0 // Reset mod multi to it doesn't get too big

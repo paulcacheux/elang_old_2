@@ -12,9 +12,9 @@
 //0
 
 {
-  x = 4;
+  let x = 4;
   loop {
-    y = x;
+    let y = x;
     loop {
       if 2 - y > 0 {
         break;
