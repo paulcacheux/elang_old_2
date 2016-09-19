@@ -3,7 +3,6 @@ use source::Span;
 #[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<Function>,
-    pub main_func: Function,
     pub span: Span,
 }
 

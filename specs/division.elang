@@ -1,6 +1,7 @@
 //Divide Integer literals
 //2
 
+fn main()
 {
   println(10/2 /2);
 }

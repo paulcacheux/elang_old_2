@@ -1,6 +1,7 @@
 //Multiply several Integer literals
 //16
 
+fn main()
 {
   println(2 *2* 4);
 }

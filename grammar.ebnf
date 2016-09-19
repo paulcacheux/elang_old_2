@@ -1,4 +1,4 @@
-program = function_def* block
+program = function_def*
         ;
 
 function_def = "fn" IDENTIFIER '(' param_list ')' block

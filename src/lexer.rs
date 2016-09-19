@@ -43,6 +43,13 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
 
     fn skip_whitespace(&mut self) {
         loop {
+            if let Some(&(_, c)) = self.input.peek() {
+                if c.is_whitespace() {
+                    self.input.next();
+                    continue;
+                }
+            }
+
             if let Some((&(_, c1), &(_, c2))) = self.input.peek_double() {
                 match (c1, c2) {
                     ('/', '/') => {
@@ -55,11 +62,10 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
                         self.input.next();
                         self.skip_multicomment(1);
                     }
-                    (c, _) if c.is_whitespace() => {
-                        self.input.next();
-                    }
-                    _ => break,
+                    _ => return,
                 }
+            } else {
+                return
             }
         }
     }

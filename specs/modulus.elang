@@ -2,6 +2,7 @@
 //1
 //0
 
+fn main()
 {
   println(14 % 10%3);
   println(10 % 2);

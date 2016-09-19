@@ -52,27 +52,21 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
-        // program = function_def* block
+        // program = function_def*
 
         let mut funcs = Vec::new();
         while self.lexer.peek().is_some() && match_peek_token!(self.lexer => Token::FnKw) {
             funcs.push(try!(self.parse_function_def()));
         }
-
-        let block = try!(self.parse_block());
-        let span = Span::merge(funcs.first().map(|func| func.span).unwrap_or(block.span),
-                               block.span);
-
-        let main_func = Function {
-            name: String::from("main"),
-            params: Vec::new(),
-            span: block.span,
-            block: block,
+        let span = if funcs.is_empty() {
+            Span::new_with_len(0, 1)
+        } else {
+            Span::merge(funcs.first().map(|func| func.span).unwrap(),
+                        funcs.last().map(|func| func.span).unwrap())
         };
 
         Ok(Program {
             functions: funcs,
-            main_func: main_func,
             span: span,
         })
     }
@@ -88,6 +82,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         expect!(self.lexer, Token::LParen, "(");
         let mut param_names = Vec::new();
+
         if self.lexer.peek().is_some() && !match_peek_token!(self.lexer => Token::RParen) {
             param_names.push(match self.lexer.next() {
                 Some((_, Token::Identifier(func_name))) => func_name,

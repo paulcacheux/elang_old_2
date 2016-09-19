@@ -1,15 +1,15 @@
 fn get_iter(px, py) {
-    xi = 5*px - 250;
-    yi = 5*py - 100;
+    let xi = 5*px - 250;
+    let yi = 5*py - 100;
 
-    x = 0;
-    y = 0;
+    let x = 0;
+    let y = 0;
 
-    iter = 0;
-    max_iter = 1000;
+    let iter = 0;
+    let max_iter = 1000;
 
     while x*x + y*y < 4*10000 && iter < max_iter {
-        xtemp = (x*x - y*y)/100 + xi;
+        let xtemp = (x*x - y*y)/100 + xi;
         y = 2*x*y/100 + yi;
         x = xtemp;
         iter = iter + 1;
@@ -18,9 +18,10 @@ fn get_iter(px, py) {
     return iter;
 }
 
+fn main()
 {
-    px = 0;
-    py = 0;
+    let px = 0;
+    let py = 0;
 
     while py < 40 {
         while px < 70 {

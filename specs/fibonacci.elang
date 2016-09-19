@@ -10,6 +10,7 @@
 //21
 //34
 
+fn main()
 {
   let fibCount = 10;
   let thisFib = 1;

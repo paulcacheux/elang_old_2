@@ -1,6 +1,7 @@
 //Subtract Integer literals
 //7
 
+fn main()
 {
   println(10 - 2-1);
 }

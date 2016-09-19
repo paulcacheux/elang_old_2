@@ -10,6 +10,7 @@
 //2
 //1
 
+fn main()
 {
   let primeCalc = 23;
   loop {

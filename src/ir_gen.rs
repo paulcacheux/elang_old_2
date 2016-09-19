@@ -10,10 +10,19 @@ pub fn generate<'a>(program: ast::Program, diag_engine: &DiagnosticEngine<'a>) -
     builder.symbols.functions.insert("println".to_string(), 1);
     builder.symbols.functions.insert("print".to_string(), 1);
     builder.symbols.functions.insert("read".to_string(), 0);
+
+    let mut main_available = false;
     for function in program.functions {
-        functions.push(builder.generate_function(function))
+        let function = builder.generate_function(function);
+        if function.name == "main" {
+            main_available = true;
+        }
+        functions.push(function)
     }
-    functions.push(builder.generate_function(program.main_func));
+
+    if !main_available {
+        diag_engine.report_sema_error("main function is not defined".to_string(), program.span)
+    }
 
     Module { functions: functions }
 }

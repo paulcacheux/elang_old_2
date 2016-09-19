@@ -2,6 +2,7 @@
 //116
 //827
 
+fn main()
 {
   println(116);
   println(827);
