@@ -110,10 +110,15 @@ impl SymbolTable {
 struct Sema<'a> {
     diag_engine: &'a DiagnosticEngine<'a>,
     symbols: SymbolTable,
-    current_break_blockid: Vec<BasicBlockId>,
-    current_continue_blockid: Vec<BasicBlockId>,
+    current_loop_scopes: Vec<LoopScope>,
     temp_counter: usize,
     blockid_counter: usize,
+}
+
+#[derive(Clone, Copy)]
+struct LoopScope {
+    break_id: BasicBlockId,
+    continue_id: BasicBlockId,
 }
 
 impl<'a> Sema<'a> {
@@ -121,8 +126,7 @@ impl<'a> Sema<'a> {
         Sema {
             diag_engine: diag_engine,
             symbols: SymbolTable::new(),
-            current_break_blockid: Vec::new(),
-            current_continue_blockid: Vec::new(),
+            current_loop_scopes: Vec::new(),
             temp_counter: 0,
             blockid_counter: 0,
         }
@@ -263,11 +267,12 @@ impl<'a> Sema<'a> {
                                           branch: None,
                                       }];
 
-                self.current_break_blockid.push(loop_end_blockid);
-                self.current_continue_blockid.push(loop_start_blockid);
+                self.current_loop_scopes.push(LoopScope {
+                    break_id: loop_end_blockid,
+                    continue_id: loop_start_blockid,
+                });
                 blocks.extend(self.generate_statement(*stmt));
-                self.current_break_blockid.pop();
-                self.current_continue_blockid.pop();
+                self.current_loop_scopes.pop();
 
                 blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
@@ -306,11 +311,12 @@ impl<'a> Sema<'a> {
                     branch: None,
                 });
 
-                self.current_break_blockid.push(end_blockid);
-                self.current_continue_blockid.push(cond_blockid);
+                self.current_loop_scopes.push(LoopScope {
+                    break_id: end_blockid,
+                    continue_id: cond_blockid,
+                });
                 blocks.extend(self.generate_statement(*stmt));
-                self.current_break_blockid.pop();
-                self.current_continue_blockid.pop();
+                self.current_loop_scopes.pop();
 
                 blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
@@ -326,11 +332,11 @@ impl<'a> Sema<'a> {
                 blocks
             }
             Break { span } => {
-                if let Some(&break_dest) = self.current_break_blockid.last() {
+                if let Some(&loop_scope) = self.current_loop_scopes.last() {
                     vec![TempBasicBlock {
                              id: self.new_blockid(),
                              instructions: Vec::new(),
-                             branch: Some(Branch::Jmp(break_dest)),
+                             branch: Some(Branch::Jmp(loop_scope.break_id)),
                          }]
                 } else {
                     self.diag_engine
@@ -338,11 +344,11 @@ impl<'a> Sema<'a> {
                 }
             }
             Continue { span } => {
-                if let Some(&continue_dest) = self.current_continue_blockid.last() {
+                if let Some(&loop_scope) = self.current_loop_scopes.last() {
                     vec![TempBasicBlock {
                              id: self.new_blockid(),
                              instructions: Vec::new(),
-                             branch: Some(Branch::Jmp(continue_dest)),
+                             branch: Some(Branch::Jmp(loop_scope.continue_id)),
                          }]
                 } else {
                     self.diag_engine
