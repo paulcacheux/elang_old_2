@@ -139,6 +139,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             Some(&(_, Token::LoopKw)) => self.parse_loop_statement(),
             Some(&(_, Token::WhileKw)) => self.parse_while_statement(),
             Some(&(_, Token::BreakKw)) => self.parse_break_statement(),
+            Some(&(_, Token::ContinueKw)) => self.parse_continue_statement(),
             Some(&(_, Token::ReturnKw)) => self.parse_return_statement(),
             Some(&(_, Token::LBrace)) => self.parse_block_statement(),
             _ => self.parse_statement_expression(),
@@ -227,6 +228,15 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
         Ok(Statement::Break { span: span })
+    }
+
+    pub fn parse_continue_statement(&mut self) -> Result<Statement, ParseError> {
+        // continue-statement = "continue" ";"
+
+        let kw_span = expect!(self.lexer, Token::ContinueKw, "continue");
+        let end_span = expect!(self.lexer, Token::SemiColon, ";");
+        let span = Span::merge(kw_span, end_span);
+        Ok(Statement::Continue { span: span })
     }
 
     pub fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {

@@ -40,6 +40,7 @@ pub enum Statement {
         span: Span,
     },
     Break { span: Span },
+    Continue { span: Span },
     Return { expr: Expression, span: Span },
     Expression { expr: Expression, span: Span },
     Block { block: Block, span: Span },
@@ -53,6 +54,7 @@ impl Statement {
             Statement::Loop { span, .. } |
             Statement::While { span, .. } |
             Statement::Break { span, .. } |
+            Statement::Continue { span, .. } |
             Statement::Return { span, .. } |
             Statement::Expression { span, .. } |
             Statement::Block { span, .. } => span,

@@ -9,6 +9,7 @@ mod source;
 mod token;
 mod lexer;
 mod ast;
+mod ast_pp;
 mod parser;
 mod diagnostic;
 mod ir;
@@ -47,6 +48,7 @@ struct Args {
 enum EmitType {
     Ir,
     C,
+    Pretty,
 }
 
 fn main() {
@@ -64,16 +66,18 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let mut module = ir_gen::generate(program, &diagnostic_engine);
-    if args.flag_O {
-        ir_opt::optimize(&mut module);
-    }
-
     let emit_type = args.flag_emit.unwrap_or(EmitType::C);
 
     let output_content = match emit_type {
-        EmitType::Ir => module.to_string(),
-        EmitType::C => cgen::generate(module),
+        EmitType::Ir => {
+            let module = get_module(program, &diagnostic_engine, args.flag_O);
+            module.to_string()
+        }
+        EmitType::C => {
+            let module = get_module(program, &diagnostic_engine, args.flag_O);
+            cgen::generate(module)
+        }
+        EmitType::Pretty => ast_pp::print(&program),
     };
 
     if let Some(output_path) = args.flag_o {
@@ -81,5 +85,15 @@ fn main() {
     } else {
         println!("{}", output_content);
     }
+}
 
+fn get_module(program: ast::Program,
+              diag_engine: &diagnostic::DiagnosticEngine,
+              opt: bool)
+              -> ir::Module {
+    let mut module = ir_gen::generate(program, diag_engine);
+    if opt {
+        ir_opt::optimize(&mut module);
+    }
+    module
 }

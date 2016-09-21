@@ -111,6 +111,7 @@ struct Sema<'a> {
     diag_engine: &'a DiagnosticEngine<'a>,
     symbols: SymbolTable,
     current_break_blockid: Vec<BasicBlockId>,
+    current_continue_blockid: Vec<BasicBlockId>,
     temp_counter: usize,
     blockid_counter: usize,
 }
@@ -121,6 +122,7 @@ impl<'a> Sema<'a> {
             diag_engine: diag_engine,
             symbols: SymbolTable::new(),
             current_break_blockid: Vec::new(),
+            current_continue_blockid: Vec::new(),
             temp_counter: 0,
             blockid_counter: 0,
         }
@@ -262,8 +264,10 @@ impl<'a> Sema<'a> {
                                       }];
 
                 self.current_break_blockid.push(loop_end_blockid);
+                self.current_continue_blockid.push(loop_start_blockid);
                 blocks.extend(self.generate_statement(*stmt));
                 self.current_break_blockid.pop();
+                self.current_continue_blockid.pop();
 
                 blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
@@ -303,8 +307,10 @@ impl<'a> Sema<'a> {
                 });
 
                 self.current_break_blockid.push(end_blockid);
+                self.current_continue_blockid.push(cond_blockid);
                 blocks.extend(self.generate_statement(*stmt));
                 self.current_break_blockid.pop();
+                self.current_continue_blockid.pop();
 
                 blocks.push(TempBasicBlock {
                     id: self.new_blockid(),
@@ -331,6 +337,19 @@ impl<'a> Sema<'a> {
                         .report_sema_error("Break outside of a loop/while".to_string(), span);
                 }
             }
+            Continue { span } => {
+                if let Some(&continue_dest) = self.current_continue_blockid.last() {
+                    vec![TempBasicBlock {
+                             id: self.new_blockid(),
+                             instructions: Vec::new(),
+                             branch: Some(Branch::Jmp(continue_dest)),
+                         }]
+                } else {
+                    self.diag_engine
+                        .report_sema_error("Continue outside of a loop/while".to_string(), span);
+                }
+            }
+
             Return { expr, .. } => {
                 let expr_name = self.new_temp();
                 let expr_id = self.new_blockid();

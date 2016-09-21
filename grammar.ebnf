@@ -15,6 +15,7 @@ statement = let-statement
           | loop-statement
           | while-statement
           | break-statement
+          | continue-statement
           | return-statement
           | expr-statement
           | block
@@ -31,6 +32,9 @@ while-statement = "while" expression statement
 
 break-statement = "break" ";"
                 ;
+
+continue-statement = "continue" ";"
+                   ;
 
 return-statement = "return" expression ";"
                  ;

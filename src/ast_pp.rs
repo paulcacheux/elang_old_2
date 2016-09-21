@@ -25,8 +25,6 @@ impl PrettyPrinter {
             self.print_function(&function);
             self.output.push('\n');
         }
-        self.print_block(&program.main_func.block);
-        self.output.push('\n');
     }
 
     pub fn print_function(&mut self, function: &Function) {
@@ -49,6 +47,12 @@ impl PrettyPrinter {
 
     pub fn print_statement(&mut self, stmt: &Statement) {
         match *stmt {
+            Statement::Let { ref id, ref expr, .. } => {
+                self.print_tab();
+                self.output.push_str(&format!("let {} = ", id));
+                self.print_expression(expr);
+                self.output.push_str(";\n");
+            }
             Statement::If { ref cond, ref if_stmt, ref else_stmt, .. } => {
                 self.print_tab();
                 self.output.push_str("if ");
@@ -83,18 +87,22 @@ impl PrettyPrinter {
             }
             Statement::Break { .. } => {
                 self.print_tab();
-                self.output.push_str("break\n");
+                self.output.push_str("break;\n");
+            }
+            Statement::Continue { .. } => {
+                self.print_tab();
+                self.output.push_str("continue;\n");
             }
             Statement::Return { ref expr, .. } => {
                 self.print_tab();
                 self.output.push_str("return ");
                 self.print_expression(expr);
-                self.output.push('\n');
+                self.output.push_str(";\n");
             }
             Statement::Expression { ref expr, .. } => {
                 self.print_tab();
                 self.print_expression(expr);
-                self.output.push('\n');
+                self.output.push_str(";\n");
             }
             Statement::Block { ref block, .. } => {
                 self.current_tab -= 1;

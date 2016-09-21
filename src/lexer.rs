@@ -13,6 +13,7 @@ fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
         "loop" => Token::LoopKw,
         "if" => Token::IfKw,
         "break" => Token::BreakKw,
+        "continue" => Token::ContinueKw,
         "return" => Token::ReturnKw,
         "else" => Token::ElseKw,
         "while" => Token::WhileKw,
@@ -65,7 +66,7 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
                     _ => return,
                 }
             } else {
-                return
+                return;
             }
         }
     }
