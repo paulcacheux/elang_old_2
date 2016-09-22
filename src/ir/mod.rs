@@ -1,3 +1,6 @@
+pub mod opt;
+pub mod gen;
+
 use itertools::Itertools;
 use std::collections::HashSet;
 

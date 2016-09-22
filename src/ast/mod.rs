@@ -1,3 +1,5 @@
+pub mod pretty_printer;
+
 use source::Span;
 
 #[derive(Debug, Clone)]

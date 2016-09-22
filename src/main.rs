@@ -9,12 +9,9 @@ mod source;
 mod token;
 mod lexer;
 mod ast;
-mod ast_pp;
 mod parser;
 mod diagnostic;
 mod ir;
-mod ir_gen;
-mod ir_opt;
 mod cgen;
 
 use source::Manager;
@@ -77,7 +74,7 @@ fn main() {
             let module = get_module(program, &diagnostic_engine, args.flag_O);
             cgen::generate(module)
         }
-        EmitType::Pretty => ast_pp::print(&program),
+        EmitType::Pretty => ast::pretty_printer::print(&program),
     };
 
     if let Some(output_path) = args.flag_o {
@@ -91,9 +88,9 @@ fn get_module(program: ast::Program,
               diag_engine: &diagnostic::DiagnosticEngine,
               opt: bool)
               -> ir::Module {
-    let mut module = ir_gen::generate(program, diag_engine);
+    let mut module = ir::gen::generate(program, diag_engine);
     if opt {
-        ir_opt::optimize(&mut module);
+        ir::opt::optimize(&mut module);
     }
     module
 }
