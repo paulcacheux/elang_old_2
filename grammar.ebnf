@@ -1,6 +1,9 @@
 program = function_def*
         ;
 
+type = IDENTIFIER
+     | "&" type
+
 function_def = "fn" IDENTIFIER '(' param_list ')' block
              ;
 
