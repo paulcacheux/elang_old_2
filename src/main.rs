@@ -8,11 +8,12 @@ mod double_peekable;
 mod source;
 mod token;
 mod lexer;
-mod ast;
+// mod ast;
+mod parse_tree;
 mod parser;
 mod diagnostic;
-mod ir;
-mod cgen;
+// mod ir;
+// mod cgen;
 
 use source::Manager;
 use lexer::Lexer;
@@ -43,8 +44,8 @@ struct Args {
 
 #[derive(RustcDecodable, Debug, Clone, Copy, PartialEq, Eq)]
 enum EmitType {
-    Ir,
-    C,
+    // Ir,
+    // C,
     Pretty,
 }
 
@@ -63,18 +64,19 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    let emit_type = args.flag_emit.unwrap_or(EmitType::C);
+    // let emit_type = args.flag_emit.unwrap_or(EmitType::C);
+    let emit_type = args.flag_emit.unwrap_or(EmitType::Pretty);
 
     let output_content = match emit_type {
-        EmitType::Ir => {
-            let module = get_module(program, &diagnostic_engine, args.flag_O);
-            module.to_string()
-        }
-        EmitType::C => {
-            let module = get_module(program, &diagnostic_engine, args.flag_O);
-            cgen::generate(module)
-        }
-        EmitType::Pretty => ast::pretty_printer::print(&program),
+        // EmitType::Ir => {
+        //     let module = get_module(program, &diagnostic_engine, args.flag_O);
+        //     module.to_string()
+        // }
+        // EmitType::C => {
+        //     let module = get_module(program, &diagnostic_engine, args.flag_O);
+        //     cgen::generate(module)
+        // }
+        EmitType::Pretty => parse_tree::pretty_printer::print(&program),
     };
 
     if let Some(output_path) = args.flag_o {
@@ -84,13 +86,13 @@ fn main() {
     }
 }
 
-fn get_module(program: ast::Program,
-              diag_engine: &diagnostic::DiagnosticEngine,
-              opt: bool)
-              -> ir::Module {
-    let mut module = ir::gen::generate(program, diag_engine);
-    if opt {
-        ir::opt::optimize(&mut module);
-    }
-    module
-}
+// fn get_module(program: ast::Program,
+//               diag_engine: &diagnostic::DiagnosticEngine,
+//               opt: bool)
+//               -> ir::Module {
+//     let mut module = ir::gen::generate(program, diag_engine);
+//     if opt {
+//         ir::opt::optimize(&mut module);
+//     }
+//     module
+// }

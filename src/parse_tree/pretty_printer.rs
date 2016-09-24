@@ -1,5 +1,6 @@
 use std::iter;
-use ast::{Program, Function, Block, Statement, Expression, SCBinOpKind, BinOpKind, UnOpKind};
+use parse_tree::{Program, Type, Function, Param, Block, Statement, Expression, SCBinOpKind,
+                 BinOpKind, UnOpKind};
 
 pub fn print(program: &Program) -> String {
     let mut pp = PrettyPrinter {
@@ -27,10 +28,42 @@ impl PrettyPrinter {
         }
     }
 
+    pub fn print_type(&mut self, ty: &Type) {
+        match *ty {
+            Type::Unit { .. } => self.output.push_str("()"),
+            Type::Id { ref id, .. } => self.output.push_str(id),
+            Type::Ref { ref sub_ty, .. } => {
+                self.output.push('&');
+                self.print_type(sub_ty);
+            }
+        }
+    }
+
     pub fn print_function(&mut self, function: &Function) {
-        self.output.push_str(&format!("fn {}({})\n", function.name, function.params.join(", ")));
+        self.output.push_str("fn ");
+        self.output.push_str(&function.name);
+        self.output.push('(');
+
+        if !function.params.is_empty() {
+            for param in &function.params {
+                self.print_param(param);
+                self.output.push_str(", ");
+            }
+            self.output.pop();
+            self.output.pop();
+        }
+
+        self.output.push_str(") -> ");
+        self.print_type(&function.ret_ty);
+        self.output.push('\n');
         self.print_block(&function.block);
         self.output.push('\n');
+    }
+
+    pub fn print_param(&mut self, param: &Param) {
+        self.output.push_str(&param.name);
+        self.output.push_str(": ");
+        self.print_type(&param.ty);
     }
 
     pub fn print_block(&mut self, block: &Block) {
@@ -47,9 +80,14 @@ impl PrettyPrinter {
 
     pub fn print_statement(&mut self, stmt: &Statement) {
         match *stmt {
-            Statement::Let { ref id, ref expr, .. } => {
+            Statement::Let { ref id, ref ty, ref expr, .. } => {
                 self.print_tab();
-                self.output.push_str(&format!("let {} = ", id));
+                self.output.push_str(&format!("let {}", id));
+                if let Some(ref ty) = *ty {
+                    self.output.push_str(": ");
+                    self.print_type(ty);
+                }
+                self.output.push_str(" = ");
                 self.print_expression(expr);
                 self.output.push_str(";\n");
             }

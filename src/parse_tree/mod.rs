@@ -9,10 +9,35 @@ pub struct Program {
 }
 
 #[derive(Debug, Clone)]
+pub enum Type {
+    Unit { span: Span },
+    Id { id: String, span: Span },
+    Ref { sub_ty: Box<Type>, span: Span },
+}
+
+impl Type {
+    pub fn span(&self) -> Span {
+        match *self {
+            Type::Unit { span } |
+            Type::Id { span, .. } |
+            Type::Ref { span, .. } => span,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
-    pub params: Vec<String>,
+    pub params: Vec<Param>,
+    pub ret_ty: Type,
     pub block: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub name: String,
+    pub ty: Type,
     pub span: Span,
 }
 
@@ -26,6 +51,7 @@ pub struct Block {
 pub enum Statement {
     Let {
         id: String,
+        ty: Option<Type>,
         expr: Expression,
         span: Span,
     },

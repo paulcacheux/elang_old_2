@@ -1,5 +1,6 @@
 use double_peekable::DoublePeekable;
-use ast::{Program, Function, Block, Statement, Expression, SCBinOpKind, BinOpKind, UnOpKind};
+use parse_tree::{Program, Type, Function, Param, Block, Statement, Expression, SCBinOpKind,
+                 BinOpKind, UnOpKind};
 use source::Span;
 use token::Token;
 
@@ -71,8 +72,38 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         })
     }
 
+    pub fn parse_type(&mut self) -> Result<Type, ParseError> {
+        // type = IDENTIFIER
+        //      | '&' type
+        //      | "()" # unit type
+
+        match self.lexer.next() {
+            Some((span, Token::AmpOp)) => {
+                let sub_ty = try!(self.parse_type());
+                let span = Span::merge(span, sub_ty.span());
+                Ok(Type::Ref {
+                    sub_ty: Box::new(sub_ty),
+                    span: span,
+                })
+            }
+            Some((span, Token::LParen)) => {
+                let end_span = expect!(self.lexer, Token::RParen, ")");
+                let span = Span::merge(span, end_span);
+                Ok(Type::Unit { span: span })
+            }
+            Some((span, Token::Identifier(id))) => {
+                Ok(Type::Id {
+                    id: id,
+                    span: span,
+                })
+            }
+            other => return make_unexpected!("identifier, &, (", other),
+        }
+    }
+
     pub fn parse_function_def(&mut self) -> Result<Function, ParseError> {
-        // function_def = "fn" IDENTIFIER '(' param_list ')' block
+        // function_def = "fn" IDENTIFIER '(' param_list ')' "->" type block
+
         let func_span = expect!(self.lexer, Token::FnKw, "fn");
 
         let func_name = match self.lexer.next() {
@@ -81,29 +112,55 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         };
 
         expect!(self.lexer, Token::LParen, "(");
-        let mut param_names = Vec::new();
+        let params = try!(self.parse_param_list());
+        let dummy_span = expect!(self.lexer, Token::RParen, ")");
 
-        if self.lexer.peek().is_some() && !match_peek_token!(self.lexer => Token::RParen) {
-            param_names.push(match self.lexer.next() {
-                Some((_, Token::Identifier(func_name))) => func_name,
-                other => return make_unexpected!("identifier", other),
-            });
-            while self.lexer.peek().is_some() && !match_peek_token!(self.lexer => Token::RParen) {
-                expect!(self.lexer, Token::Comma, ",");
-                param_names.push(match self.lexer.next() {
-                    Some((_, Token::Identifier(func_name))) => func_name,
-                    other => return make_unexpected!("identifier", other),
-                });
-            }
-        }
-        expect!(self.lexer, Token::RParen, ")");
+        let ret_ty = if match_peek_token!(self.lexer => Token::Arrow) {
+            self.lexer.next();
+            try!(self.parse_type())
+        } else {
+            Type::Unit { span: dummy_span }
+        };
+
         let block = try!(self.parse_block());
         let span = Span::merge(func_span, block.span);
 
         Ok(Function {
             name: func_name,
-            params: param_names,
+            params: params,
+            ret_ty: ret_ty,
             block: block,
+            span: span,
+        })
+    }
+
+    pub fn parse_param_list(&mut self) -> Result<Vec<Param>, ParseError> {
+        // param_list = [ param { ',' param } ]
+        let mut params = Vec::new();
+
+        // Be carefull to the dependecy on Token::RParen !!
+        if self.lexer.peek().is_some() && !match_peek_token!(self.lexer => Token::RParen) {
+            params.push(try!(self.parse_param()));
+            while self.lexer.peek().is_some() && !match_peek_token!(self.lexer => Token::RParen) {
+                expect!(self.lexer, Token::Comma, ",");
+                params.push(try!(self.parse_param()));
+            }
+        }
+        Ok(params)
+    }
+
+    pub fn parse_param(&mut self) -> Result<Param, ParseError> {
+        // param = IDENTIFIER ':' type
+        let (begin_span, name) = match self.lexer.next() {
+            Some((span, Token::Identifier(name))) => (span, name),
+            other => return make_unexpected!("identifier", other),
+        };
+        expect!(self.lexer, Token::Colon, ":");
+        let ty = try!(self.parse_type());
+        let span = Span::merge(begin_span, ty.span());
+        Ok(Param {
+            name: name,
+            ty: ty,
             span: span,
         })
     }
@@ -156,12 +213,20 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             other => return make_unexpected!("identifier", other),
         };
 
+        let ty = if match_peek_token!(self.lexer => Token::Colon) {
+            self.lexer.next();
+            Some(try!(self.parse_type()))
+        } else {
+            None
+        };
+
         expect!(self.lexer, Token::AssignOp, "=");
         let expr = try!(self.parse_expression());
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
 
         Ok(Statement::Let {
             id: id,
+            ty: ty,
             expr: expr,
             span: Span::merge(kw_span, end_span),
         })

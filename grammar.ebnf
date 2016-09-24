@@ -2,13 +2,18 @@ program = function_def*
         ;
 
 type = IDENTIFIER
-     | "&" type
+     | '&' type
+     | "()" # unit type
+     ;
 
-function_def = "fn" IDENTIFIER '(' param_list ')' block
+function_def = "fn" IDENTIFIER '(' param_list ')' [ "->" type ] block
              ;
 
-param_list = [ IDENTIFIER { ',' IDENTIFIER } ]
+param_list = [ param { ',' param } ]
            ;
+
+param = IDENTIFIER ':' type
+      ;
 
 block = '{' statement* '}'
       ;
@@ -42,7 +47,7 @@ continue-statement = "continue" ";"
 return-statement = "return" expression ";"
                  ;
 
-let-statement = "let" IDENTIFIER "=" expression ";"
+let-statement = "let" IDENTIFIER [ ':' type ] "=" expression ";"
               ;
 
 expr-statement = expression ";"

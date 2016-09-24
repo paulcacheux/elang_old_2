@@ -1,4 +1,4 @@
-fn get_iter(px, py) {
+fn get_iter(px: int, py: int) -> int {
     let xi = 5*px - 250;
     let yi = 5*py - 100;
 
@@ -18,7 +18,7 @@ fn get_iter(px, py) {
     return iter;
 }
 
-fn main()
+fn main() -> ()
 {
     let px = 0;
     let py = 0;
