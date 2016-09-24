@@ -1,6 +1,6 @@
 use double_peekable::DoublePeekable;
-use parse_tree::{Program, Type, Function, Param, Block, Statement, Expression, SCBinOpKind,
-                 BinOpKind, UnOpKind};
+use ty::{SCBinOpKind, BinOpKind, UnOpKind};
+use parse_tree::{Program, Type, Function, Param, Block, Statement, Expression};
 use source::Span;
 use token::Token;
 

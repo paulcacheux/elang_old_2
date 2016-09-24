@@ -1,5 +1,6 @@
 pub mod pretty_printer;
 
+use ty::{SCBinOpKind, BinOpKind, UnOpKind};
 use source::Span;
 
 #[derive(Debug, Clone)]
@@ -88,34 +89,6 @@ impl Statement {
             Statement::Block { span, .. } => span,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SCBinOpKind {
-    LogicalAnd,
-    LogicalOr,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinOpKind {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Less,
-    LessEq,
-    Greater,
-    GreaterEq,
-    Equal,
-    NotEqual,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnOpKind {
-    Plus,
-    Minus,
-    LogNot,
 }
 
 #[derive(Debug, Clone)]
