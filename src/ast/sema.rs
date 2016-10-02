@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use diagnostic::DiagnosticEngine;
-use ast;
-use parse_tree as pt;
-use ty::Type;
+use ast::{Type, Function, Param, Block, Statement, Expression, BinOpKind,
+          UnOpKind};
+use source::Span;
 
 #[derive(Debug, Clone)]
 pub struct SymbolTable {
@@ -26,7 +26,7 @@ impl SymbolTable {
     pub fn insert(&mut self, name: String, ty: Type) -> Option<Type> {
         // return Some(old_ty) if name is already defined in this scope, else None
 
-        scopes.last_mut().unwrap().insert(name, ty)
+        self.scopes.last_mut().unwrap().insert(name, ty)
     }
 
     pub fn get(&self, name: &String) -> Option<&Type> {
@@ -40,226 +40,456 @@ impl SymbolTable {
 }
 
 #[derive(Debug, Clone)]
-struct TyppedName {
+pub struct FunctionInfo {
     name: String,
-    ty: Type,
+    parameters: Vec<Param>,
+    return_ty: Type,
 }
 
 #[derive(Debug, Clone)]
 pub struct Sema<'a> {
-    symbol_table: SymbolTable,
-    diag_engine: DiagnosticEngine<'a>,
+    pub symbol_table: SymbolTable,
+    pub diag_engine: &'a DiagnosticEngine<'a>,
 
-    current_ret_ty: Type,
-    loop_level: usize,
+    pub current_ret_ty: Type,
+    pub loop_level: usize,
 }
 
-impl Sema<'a> {
-    pub fn sema_program(program: pt::Program,
-                        diag_engine: &'a DiagnosticEngine<'a>)
-                        -> ast::Program {
-        let sema = Sema {
+impl<'a> Sema<'a> {
+    pub fn new(diag_engine: &'a DiagnosticEngine<'a>) -> Self {
+        Sema {
             symbol_table: SymbolTable::new(),
             diag_engine: diag_engine,
             current_ret_ty: Type::Unit,
             loop_level: 0,
+        }
+    }
+
+    pub fn add_io_funcs(&mut self) {
+        self.symbol_table.insert(
+            "print".to_string(),
+            Type::Function(vec![Type::Int], Box::new(Type::Unit))
+        );
+        self.symbol_table.insert(
+            "println".to_string(),
+            Type::Function(vec![Type::Int], Box::new(Type::Unit))
+        );
+        self.symbol_table.insert(
+            "read".to_string(),
+            Type::Function(vec![], Box::new(Type::Int))
+        );
+    }
+
+    pub fn sema_function_def_begin(&mut self,
+                                   name: String,
+                                   params: Vec<Param>,
+                                   ret_ty: Type,
+                                   name_span: Span)
+                                   -> FunctionInfo {
+        if let Some(_) = self.symbol_table.insert(name.clone(),
+                                                       Type::function_type(params.clone(),
+                                                                           ret_ty.clone())) {
+            self.diag_engine
+                .report_sema_error(format!("{} is already defined as a function", name), name_span);
+        }
+
+        self.symbol_table.begin_scope();
+
+        for param in params.clone() {
+            if let Some(_) = self.symbol_table.insert(param.name.clone(), param.ty) {
+                self.diag_engine
+                    .report_sema_error(format!("{} is already defined as a parameter of this \
+                                                function",
+                                               param.name),
+                                       param.span);
+            }
+        }
+
+        self.current_ret_ty = ret_ty.clone();
+
+        FunctionInfo {
+            name: name,
+            parameters: params,
+            return_ty: ret_ty,
+        }
+    }
+
+    pub fn sema_function_def_end(&mut self,
+                                 func_info: FunctionInfo,
+                                 block: Block,
+                                 span: Span)
+                                 -> Function {
+        self.symbol_table.end_scope();
+        self.current_ret_ty = Type::Unit;
+
+        Function {
+            name: func_info.name,
+            parameters: func_info.parameters,
+            return_ty: func_info.return_ty,
+            block: block,
+            span: span,
+        }
+    }
+
+    pub fn sema_let_stmt(&mut self,
+                         id: String,
+                         ty: Option<Type>,
+                         expr: Expression,
+                         span: Span)
+                         -> Statement {
+        let expr = self.l2r_if_needed(expr);
+        let expr_ty = expr.ty();
+        let ty = ty.unwrap_or(expr_ty.clone());
+
+        if ty != expr_ty {
+            self.diag_engine
+                .report_sema_error(format!("Mismatching types in assigment (expected: {}, \
+                                            given: {})",
+                                           ty,
+                                           expr_ty),
+                                   span);
+        }
+
+        if let Some(_) = self.symbol_table.insert(id.clone(), ty.clone()) {
+            self.diag_engine.report_sema_error(format!("{} is already defined", id.clone()), span);
+        }
+
+        Statement::Let {
+            identifier: id,
+            ty: ty,
+            expression: expr,
+            span: span,
+        }
+    }
+
+    pub fn sema_if_stmt(&mut self,
+                        condition: Expression,
+                        if_stmt: Statement,
+                        else_stmt: Option<Statement>,
+                        span: Span)
+                        -> Statement {
+        let condition = self.l2r_if_needed(condition);
+        let cond_ty = condition.ty();
+        if cond_ty != Type::Bool {
+            self.diag_engine
+                .report_sema_error(format!("If condition must be of bool type (given: {})",
+                                           cond_ty),
+                                   span);
+        }
+
+        Statement::If {
+            condition: condition,
+            if_statement: Box::new(if_stmt),
+            else_statement: else_stmt.map(Box::new),
+            span: span,
+        }
+    }
+
+    pub fn sema_while_stmt(&mut self,
+                           condition: Expression,
+                           stmt: Statement,
+                           span: Span)
+                           -> Statement {
+        let condition = self.l2r_if_needed(condition);
+        let cond_ty = condition.ty();
+        if cond_ty != Type::Bool {
+            self.diag_engine
+                .report_sema_error(format!("While condition must be of bool type (given: {})",
+                                           cond_ty),
+                                   span);
+        }
+
+        Statement::While {
+            condition: condition,
+            statement: Box::new(stmt),
+            span: span,
+        }
+    }
+
+    pub fn sema_break_stmt(&mut self, span: Span) -> Statement {
+        if self.loop_level == 0 {
+            self.diag_engine.report_sema_error("Break outside a loop".to_string(), span);
+        }
+
+        Statement::Break {
+            span: span
+        }
+    }
+
+    pub fn sema_continue_stmt(&mut self, span: Span) -> Statement {
+        if self.loop_level == 0 {
+            self.diag_engine.report_sema_error("Continue outside a loop".to_string(), span);
+        }
+
+        Statement::Continue {
+            span: span
+        }
+    }
+
+    pub fn sema_return_stmt(&mut self, expr: Expression, span: Span) -> Statement {
+        let expr = self.l2r_if_needed(expr);
+        let expr_ty = expr.ty();
+        if expr_ty != self.current_ret_ty {
+            self.diag_engine.report_sema_error(
+                format!(
+                    "Mismatching return type (expected: {}, given {})",
+                    self.current_ret_ty,
+                    expr_ty
+                ),
+                span
+            );
+        }
+
+        Statement::Return {
+            expression: expr,
+            span: span
+        }
+    }
+
+    pub fn sema_identifier(&mut self, id: String, span: Span) -> Expression {
+        if let Some(ty) = self.symbol_table.get(&id) {
+            Expression::Identifier {
+                identifier: id,
+                span: span,
+                ty: Type::LVal(Box::new(ty.clone())),
+            }
+        } else {
+            self.diag_engine.report_sema_error(format!("Undefined identifier {}", id), span)
+        }
+    }
+
+    pub fn sema_binop_assign(&mut self,
+                             lhs: Expression,
+                             rhs: Expression,
+                             span: Span) -> Expression {
+        let rhs = self.l2r_if_needed(rhs);
+        let rhs_ty = rhs.ty();
+
+        if let Type::LVal(lhs_ty) = lhs.ty() {
+            if *lhs_ty != rhs_ty {
+                self.diag_engine.report_sema_error(
+                    format!(
+                        "Mismatching types in assignment (expected: {}, given: {})",
+                        lhs_ty,
+                        rhs_ty
+                    ),
+                    span
+                )
+            }
+        } else {
+            self.diag_engine.report_sema_error(
+                "The left hand side of an assignement must be a reference".to_string(),
+                span,
+            )
+        }
+
+        Expression::BinOp {
+            kind: BinOpKind::Assign,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            span: span,
+            ty: rhs_ty,
+        }
+    }
+
+    pub fn sema_binop_expr(&mut self,
+                           kind: BinOpKind,
+                           lhs: Expression,
+                           rhs: Expression,
+                           span: Span) -> Expression {
+        enum Domain {
+            Maths,
+            Comp,
+            Logical,
+            Other,
+        }
+
+        let domain = match kind {
+            BinOpKind::Add |
+            BinOpKind::Sub |
+            BinOpKind::Mul |
+            BinOpKind::Div |
+            BinOpKind::Mod => Domain::Maths,
+            BinOpKind::Less |
+            BinOpKind::LessEq |
+            BinOpKind::Greater |
+            BinOpKind::GreaterEq |
+            BinOpKind::Equal |
+            BinOpKind::NotEqual => Domain::Comp,
+            BinOpKind::LogicalOr |
+            BinOpKind::LogicalAnd => Domain::Logical,
+            _ => Domain::Other,
         };
 
-        sema.symbol_table.begin_scope();
-        let functions = program.functions.into_iter().map(sema.sema_function).collect();
-        sema.symbol_table.end_scope();
+        let lhs = self.l2r_if_needed(lhs);
+        let rhs = self.l2r_if_needed(rhs);
 
-        ast::Program { functions: functions }
-    }
-
-    fn sema_function(&mut self, function: pt::Function) -> ast::Function {
-        let name = function.name;
-        let param_types = function.params.iter().map(|param| param.ty.clone()).collect();
-        let ty = Type::Function(Box::new(function.ret_ty), params_ty);
-
-        if let Some(old_ty) = self.symbol_table.insert(name.clone(), ty.clone()) {
-            self.diag_engine
-                .report_sema_error(format!("\'{}\' function is already defined (with type \
-                                            \'{}\')",
-                                           name,
-                                           old_ty),
-                                   function.span);
-        }
-
-        let mut param_stmts = Vec::with_capacity(function.params.len());
-        for (index, param) in function.params
-            .into_iter()
-            .enumerate() {
-            if let Some(old_ty) = self.symbol_table.insert(param.name.clone(), param.ty.clone()) {
-                diag_engine.report_sema_error(format!("\'{}\' param is already defined (with \
-                                                       type \'{}\')",
-                                                      param.name,
-                                                      old_ty),
-                                              param.span);
+        let ty = match (domain, lhs.ty(), rhs.ty()) {
+            (Domain::Maths, Type::Int, Type::Int) => Type::Int,
+            (Domain::Maths, Type::UInt, Type::UInt) => Type::UInt,
+            (Domain::Maths, Type::Double, Type::Double) => Type::Double,
+            (Domain::Comp, Type::Int, Type::Int) => Type::Bool,
+            (Domain::Comp, Type::UInt, Type::UInt) => Type::Bool,
+            (Domain::Comp, Type::Bool, Type::Bool) => Type::Bool,
+            (Domain::Comp, Type::Char, Type::Char) => Type::Bool,
+            (Domain::Comp, Type::Double, Type::Double) => Type::Bool,
+            (Domain::Logical, Type::Bool, Type::Bool) => Type::Bool,
+            (_, lt, rt) => {
+                self.diag_engine.report_sema_error(
+                    format!("{:?} is undefined between {} and {}", kind, lt, rt),
+                    span
+                )
             }
+        };
 
-            ast::Statement::Let {
-                id: param.name,
-                ty: param.ty,
-                comp: Computation::Value(Value::Argument(index)),
-            }
-        }
-
-        let mut func_scope = ast::Scope { stmts: param_stmts };
-
-        let cont_scope = self.sema_block(function.block);
-        func_scope.stmts.push(ast::Statement::Scope { scope: cont_scope });
-
-        ast::Function {
-            name: name,
+        Expression::BinOp {
+            kind: kind,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            span: span,
             ty: ty,
-            scope: func_scope,
         }
     }
 
-    fn sema_block(&mut self, block: pt::Block) -> ast::Scope {
-        self.symbol_table.begin_scope();
-        let mut scope_stmts = Vec::new();
-        for stmt in blocks.stmts {
-            scope_stmts.append(self.sema_statement(stmt));
+    pub fn sema_unop_expr(&mut self, kind: UnOpKind, expr: Expression, span: Span) -> Expression {
+        let expr = self.l2r_if_needed(expr);
+
+        let ty = match (kind, expr.ty()) {
+            (UnOpKind::Plus, Type::Int) => Type::Int,
+            (UnOpKind::Plus, Type::UInt) => Type::UInt,
+            (UnOpKind::Plus, Type::Double) => Type::Double,
+            (UnOpKind::Minus, Type::Int) => Type::Int,
+            (UnOpKind::Minus, Type::Double) => Type::Double,
+            (UnOpKind::LogicalNot, Type::Bool) => Type::Bool,
+            (kind, et) => {
+                self.diag_engine.report_sema_error(
+                    format!("{:?} is undefined for {}", kind, et),
+                    span
+                )
+            }
+        };
+
+        Expression::UnOp {
+            kind: kind,
+            expression: Box::new(expr),
+            ty: ty,
+            span: span,
         }
-        self.symbol_table.end_scope();
     }
 
-    fn sema_statement(&mut self, statement: pt::Statement) -> Vec<ast::Statement> {
-        use pt::Statement;
-        match statement {
-            Statement::Let { id, ty, expr, span } => {
-                let (mut stmts, expr_tn) = self.sema_expression(expr);
-                let ty = if let Some(ty) = ty.map(self.sema_type) {
-                    if ty != expr_tn.ty {
-                        self.diag_engine
-                            .report_sema_error(format!("Definition of {}({}) with an \'{}\' \
-                                                        value",
-                                                       id,
-                                                       ty,
-                                                       expr_tn.ty),
-                                               span);
+    pub fn sema_cast_expr(&mut self, expr: Expression, ty: Type, span: Span) -> Expression {
+        let expr = self.l2r_if_needed(expr);
+        let expr_ty = expr.ty();
+
+        if expr_ty == ty {
+            return expr;
+        }
+
+        match (expr_ty, ty.clone()) {
+            (Type::Int, Type::UInt) |
+            (Type::Int, Type::Double) |
+            (Type::Int, Type::Bool) |
+            (Type::Int, Type::Char) |
+            (Type::UInt, Type::Int) |
+            (Type::UInt, Type::Double) |
+            (Type::UInt, Type::Bool) |
+            (Type::UInt, Type::Char) |
+            (Type::Double, Type::Int) |
+            (Type::Double, Type::UInt) |
+            (Type::Double, Type::Bool) |
+            (Type::Double, Type::Char) => {},
+            (src, target) => {
+                self.diag_engine.report_sema_error(
+                    format!("Cast between {} and {} is undefined", src, target),
+                    span,
+                )
+            }
+        }
+
+        Expression::Cast {
+            expression: Box::new(expr),
+            ty: ty,
+            span: span,
+        }
+    }
+
+    pub fn sema_func_call(&mut self,
+                          func_name: String,
+                          args: Vec<Expression>,
+                          span: Span) -> Expression {
+        // TODO func_name must be from an expression
+
+        let args: Vec<_> = args.into_iter().map(|param| {
+            self.l2r_if_needed(param)
+        }).collect();
+
+        if let Some(ty) = self.symbol_table.get(&func_name).cloned() {
+            if let Type::Function(params, ret) = ty {
+                if params.len() != args.len() {
+                    self.diag_engine.report_sema_error(
+                        format!(
+                            "Mismatching number of arguments (expected: {}, given: {})",
+                            args.len(),
+                            params.len()
+                        ),
+                        span
+                    )
+                }
+
+                for (ref par, ref arg) in params.into_iter().zip(args.iter()) {
+                    if *par != arg.ty() {
+                        self.diag_engine.report_sema_error(
+                            format!(
+                                "Mismatching type in argument (expected: {}, given: {})",
+                                par,
+                                arg.ty()
+                            ),
+                            arg.span()
+                        )
                     }
-                } else {
-                    expr_tn.ty
+                }
+
+                return Expression::FuncCall {
+                    function_name: func_name,
+                    arguments: args,
+                    span: span,
+                    ty: *ret,
                 };
+            } else {
+                self.diag_engine.report_sema_error(
+                    format!("{} is not callable (given: {})", func_name, ty),
+                    span
+                )
+            }
+        } else {
+            self.diag_engine.report_sema_error(format!("{} is not defined", func_name), span)
+        }
+    }
 
-                if let Some(old_ty) = self.symbol_table.insert(id.clone(), ty.clone()) {
-                    self.diag_engine
-                        .report_sema_error(format!("\'{}\' is already defined (with type \'{}\')",
-                                                   id,
-                                                   old_ty),
-                                           span: Span);
-                }
-
-                stmts.push(ast::Statement::Let {
-                    id: id,
-                    ty: ty,
-                    comp: Computation::Value(Value::Var(expr_tn.name)),
-                });
-                stmts
-            }
-            Statement::If { cond, if_stmt, else_stmt, .. } => {
-                let cond_span = cond.span();
-                let (mut stmts, expr_tn) = self.sema_expression(cond);
-                if expr_tn.ty != Type::Bool {
-                    self.diag_engine
-                        .report_sema_error(format!("Mismatching condition type (given: {}, \
-                                                    expected: {})",
-                                                   expr_tn.ty,
-                                                   Type::Bool),
-                                           cond_span);
-                }
-
-                self.symbol_table.begin_scope();
-                let if_scope = ast::Scope { stmts: self.sema_statement(if_stmt) };
-                self.symbol_table.end_scope();
-
-                let else_scope = else_stmt.map(|stmt| {
-                    self.symbol_table.begin_scope();
-                    let scope = ast::Scope { stmts: self.sema_statement(stmt) };
-                    self.symbol_table.end_scope();
-                    Some(scope)
-                });
-                stmts.push(ast::Statement::If {
-                    cond: Value::Var(expr_tn.name),
-                    if_scope: if_scope,
-                    else_scope: else_scope,
-                });
-                stmts
-            }
-            Statement::Loop { stmt, .. } => {
-                self.symbol_table.begin_scope();
-                self.loop_level += 1;
-                let scope = ast::Scope { scope: self.sema_statement(stmt) };
-                self.loop_level -= 1;
-                self.symbol_table.end_scope();
-                vec![ast::Statement::Loop { scope: scope }]
-            }
-            Statement::While { cond, stmt, .. } => {
-                let cond_span = cond.span();
-                let (mut stmts, expr_tn) = self.sema_expression(cond);
-                if expr_tn.ty != Type::Bool {
-                    self.diag_engine
-                        .report_sema_error(format!("Mismatching condition type (given: {}, \
-                                                    expected: {})",
-                                                   expr_tn.ty,
-                                                   Type::Bool),
-                                           cond_span);
-                }
-
-                self.symbol_table.begin_scope();
-                self.loop_level += 1;
-                let scope = ast::Scope { scope: self.sema_statement(stmt) };
-                self.loop_level -= 1;
-                self.symbol_table.end_scope();
-                stmts.push(ast::Statement::While {
-                    cond: Value::Var(expr_tn.name),
-                    scope: scope,
-                });
-                stmts
-            }
-            Statement::Break { span } => {
-                if self.loop_level == 0 {
-                    self.diag_engine
-                        .report_sema_error("Can't break outside of a loop/while", span);
-                }
-                vec![ast::Statement::Break]
-            }
-            Statement::Continue { .. } => {
-                if self.loop_level == 0 {
-                    self.diag_engine
-                        .report_sema_error("Can't continue outside of a loop/while", span);
-                }
-                vec![ast::Statement::Continue]
-            }
-            Statement::Return { expr, span } => {
-                let expr_span = expr.span();
-                let (mut stmts, expr_tn) = self.sema_expression(expr);
-                if expr_tn.ty != self.current_ret_ty {
-                    self.diag_engine
-                        .report_sema_error(format!("Mismatching return type (given: {}, \
-                                                    expected: {})",
-                                                   expr_tn.ty,
-                                                   self.current_ret_ty),
-                                           expr_span)
-                }
-
-                stmts.push(ast::Statement::Return { val: Value::Var(expr_tn.name) });
-                stmts
-            }
-            Statement::Expression { expr, span } => {
-                let (stmts, _) = self.sema_expression(expr);
-                stmts
-            }
-            Statement::Block { block } => {
-                vec![ast::Statement::Scope { scope: self.sema_block(block) }]
+    pub fn sema_id_type(&mut self, id: String, span: Span) -> Type {
+        match &id[..] {
+            "int" => Type::Int,
+            "uint" => Type::UInt,
+            "bool" => Type::Bool,
+            "double" => Type::Double,
+            "char" => Type::Char,
+            other => {
+                self.diag_engine
+                    .report_sema_error(format!("\'{}\' isn't a type", other), span);
             }
         }
     }
 
-    fn sema_expression(&mut self, expression: pt::Expression) -> (Vec<ast::Statement>, TyppedName) {
-
+    pub fn l2r_if_needed(&mut self, expr: Expression) -> Expression {
+        let expr_ty = expr.ty();
+        if let Type::LVal(sub_ty) = expr_ty {
+            Expression::Cast {
+                span: expr.span(),
+                expression: Box::new(expr),
+                ty: *sub_ty,
+            }
+        } else {
+            expr
+        }
     }
 }

@@ -2,7 +2,7 @@ program = function_def*
         ;
 
 type = IDENTIFIER
-     | '&' type
+     | '*' type
      | "()" # unit type
      ;
 
@@ -44,7 +44,7 @@ break-statement = "break" ";"
 continue-statement = "continue" ";"
                    ;
 
-return-statement = "return" expression ";"
+return-statement = "return" [ expression ] ";"
                  ;
 
 let-statement = "let" IDENTIFIER [ ':' type ] "=" expression ";"
@@ -72,15 +72,25 @@ ord_comp = sum [ (<|<=|>|>=) sum ]
 sum = factor { (+|-) factor }
     ;
 
-factor = term { (*|/|%) term }
+factor = cast { (*|/|%) cast }
        ;
+
+cast = term [ "as" type ]
+     ;
 
 term = IDENTIFIER
      | IDENTIFIER '(' expr_list ')'
-     | NUMBER
+     | LITERAL
      | [+|-|!] term
      | '(' expression ')'
      ;
 
 expr_list = [ expression { ',' expression } ]
           ;
+
+literal = INT_LIT
+        | UINT_LIT
+        | BOOL_LIT
+        | CHAR_LIT
+        | DOUBLE_LIT
+        ;

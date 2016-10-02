@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     FnKw,
     LetKw,
@@ -11,6 +11,7 @@ pub enum Token {
     IfKw,
     ElseKw,
     WhileKw,
+    AsKw,
     LParen,
     RParen,
     LBrace,
@@ -35,7 +36,11 @@ pub enum Token {
     LogOrOp,
     LogNotOp,
     AmpOp,
-    Number(i64),
+    IntLit(i64),
+    UIntLit(u64),
+    DoubleLit(f64),
+    BoolLit(bool),
+    CharLit(u8),
     Identifier(String),
 }
 
@@ -51,6 +56,7 @@ impl fmt::Display for Token {
             Token::IfKw => write!(f, "if"),
             Token::ElseKw => write!(f, "else"),
             Token::WhileKw => write!(f, "while"),
+            Token::AsKw => write!(f, "as"),
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),
@@ -75,7 +81,11 @@ impl fmt::Display for Token {
             Token::LogOrOp => write!(f, "||"),
             Token::LogNotOp => write!(f, "!"),
             Token::AmpOp => write!(f, "&"),
-            Token::Number(n) => write!(f, "{}", n),
+            Token::IntLit(n) => write!(f, "{}", n),
+            Token::UIntLit(n) => write!(f, "{}", n),
+            Token::DoubleLit(n) => write!(f, "{}", n),
+            Token::BoolLit(n) => write!(f, "{:?}", n),
+            Token::CharLit(n) => write!(f, "{:?}", n),
             Token::Identifier(ref id) => write!(f, "{}", id),
         }
     }

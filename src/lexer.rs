@@ -8,6 +8,7 @@ use diagnostic::DiagnosticEngine;
 fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     let span = Span::new_with_len(bytepos, raw.len());
     let token = match raw.as_str() {
+        "as" => Token::AsKw,
         "fn" => Token::FnKw,
         "let" => Token::LetKw,
         "loop" => Token::LoopKw,
@@ -17,6 +18,8 @@ fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
         "return" => Token::ReturnKw,
         "else" => Token::ElseKw,
         "while" => Token::WhileKw,
+        "true" => Token::BoolLit(true),
+        "false" => Token::BoolLit(false),
         _ => Token::Identifier(raw),
     };
     (span, token)
@@ -129,6 +132,91 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
         }
         res
     }
+
+    fn lex_digits(&mut self, first: Option<char>, base: u32) -> String {
+        self.take_while(first, |c| c.is_digit(base))
+    }
+
+    fn lex_number_lit(&mut self, first: char, bytepos: usize) -> (Span, Token) {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        enum Kind {
+            Int,
+            UInt,
+            Double
+        }
+
+        let mut number = self.lex_digits(Some(first), 10);
+        let mut kind = Kind::Int;
+        if let Some(&(_, '.')) = self.input.peek() {
+            self.input.next();
+            kind = Kind::Double;
+
+            number.push('.');
+            number.push_str(&self.lex_digits(None, 10));
+        }
+        if let Some(&(_, c)) = self.input.peek() {
+            if c == 'e' || c == 'E' {
+                self.input.next();
+                kind = Kind::Double;
+
+                number.push(c);
+                number.push_str(&self.lex_digits(None, 10));
+            }
+        }
+        if kind == Kind::Int {
+            if let Some(&(_, 'u')) = self.input.peek() {
+                self.input.next();
+                kind = Kind::UInt;
+            }
+        }
+
+        match kind {
+            Kind::Double => {
+                let value = f64::from_str(&number).unwrap();
+                (Span::new_with_len(bytepos, number.len()), Token::DoubleLit(value))
+            }
+            Kind::Int => {
+                let value = i64::from_str(&number).unwrap();
+                (Span::new_with_len(bytepos, number.len()), Token::IntLit(value))
+            }
+            Kind::UInt => {
+                let value = u64::from_str(&number).unwrap();
+                (Span::new_with_len(bytepos, number.len()), Token::UIntLit(value))
+            }
+        }
+    }
+
+    fn lex_char(&mut self, start_pos: usize) -> u8 {
+        if let Some((bytepos, c)) = self.input.next() {
+            if c == '\\' {
+                match self.input.next() {
+                    Some((_, 'n')) => b'\n',
+                    Some((_, 'r')) => b'\r',
+                    Some((_, 't')) => b'\t',
+                    Some((_, '\\')) => b'\\',
+                    Some((_, '\'')) => b'\'',
+                    Some((_, '0')) => b'\0',
+                    Some((epos, a)) => {
+                        self.diagnostic.report_lex_error(
+                            format!("{} is not a valid escape char", a),
+                            epos
+                        )
+                    }
+                    None => {
+                        self.diagnostic.report_lex_error(
+                            "Unclosed char literal".to_string(), bytepos
+                        )
+                    }
+                }
+            } else {
+                c as u8
+            }
+        } else {
+            self.diagnostic.report_lex_error(
+                "Unclosed char literal".to_string(), start_pos
+            )
+        }
+    }
 }
 
 impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
@@ -141,10 +229,16 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                 c if is_identifier_char(c) => {
                     identifier_or_keyword(self.take_while(Some(c), is_identifier_char), bytepos)
                 }
-                c if c.is_digit(10) => {
-                    let number = self.take_while(Some(c), |c| c.is_digit(10));
-                    let value = i64::from_str(&number).unwrap();
-                    (Span::new_with_len(bytepos, number.len()), Token::Number(value))
+                c if c.is_digit(10) => self.lex_number_lit(c, bytepos),
+                '\'' => {
+                    let c = self.lex_char(bytepos);
+                    match self.input.peek() {
+                        Some(&(end, '\'')) => {
+                            self.input.next();
+                            (Span::new(bytepos, end + 1), Token::CharLit(c))
+                        }
+                        _ => self.diagnostic.report_lex_error("Expected \'".to_string(), bytepos),
+                    }
                 }
                 '<' => self.if_next('=', Token::LessEqualOp, Token::LessOp, bytepos),
                 '>' => self.if_next('=', Token::GreaterEqualOp, Token::GreaterOp, bytepos),

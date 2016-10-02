@@ -1,11 +1,12 @@
 use double_peekable::DoublePeekable;
-use ty::{SCBinOpKind, BinOpKind, UnOpKind};
-use parse_tree::{Program, Type, Function, Param, Block, Statement, Expression};
 use source::Span;
 use token::Token;
+use ast::{Program, Type, BinOpKind, UnOpKind, Function, Param, Block, Statement, Expression};
+use ast::sema::Sema;
 
-pub struct Parser<L: IntoIterator<Item = (Span, Token)>> {
+pub struct Parser<'a, L: IntoIterator<Item = (Span, Token)>> {
     lexer: DoublePeekable<L::IntoIter>,
+    sema: Sema<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,9 +48,15 @@ macro_rules! make_unexpected {
     }
 }
 
-impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
-    pub fn new(lexer: L) -> Parser<L> {
-        Parser { lexer: DoublePeekable::new(lexer.into_iter()) }
+impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
+    pub fn new(lexer: L, sema: Sema<'a>) -> Parser<'a, L> {
+        let mut parser = Parser {
+            lexer: DoublePeekable::new(lexer.into_iter()),
+            sema: sema,
+        };
+        parser.sema.symbol_table.begin_scope();
+        parser.sema.add_io_funcs();
+        parser
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
@@ -74,29 +81,19 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
     pub fn parse_type(&mut self) -> Result<Type, ParseError> {
         // type = IDENTIFIER
-        //      | '&' type
+        //      | '*' type
         //      | "()" # unit type
 
         match self.lexer.next() {
-            Some((span, Token::AmpOp)) => {
+            Some((_, Token::TimesOp)) => {
                 let sub_ty = try!(self.parse_type());
-                let span = Span::merge(span, sub_ty.span());
-                Ok(Type::Ref {
-                    sub_ty: Box::new(sub_ty),
-                    span: span,
-                })
+                Ok(Type::Ptr(Box::new(sub_ty)))
             }
-            Some((span, Token::LParen)) => {
-                let end_span = expect!(self.lexer, Token::RParen, ")");
-                let span = Span::merge(span, end_span);
-                Ok(Type::Unit { span: span })
+            Some((_, Token::LParen)) => {
+                expect!(self.lexer, Token::RParen, ")");
+                Ok(Type::Unit)
             }
-            Some((span, Token::Identifier(id))) => {
-                Ok(Type::Id {
-                    id: id,
-                    span: span,
-                })
-            }
+            Some((span, Token::Identifier(id))) => Ok(self.sema.sema_id_type(id, span)),
             other => return make_unexpected!("identifier, &, (", other),
         }
     }
@@ -106,32 +103,28 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let func_span = expect!(self.lexer, Token::FnKw, "fn");
 
-        let func_name = match self.lexer.next() {
-            Some((_, Token::Identifier(func_name))) => func_name,
+        let (name_span, func_name) = match self.lexer.next() {
+            Some((span, Token::Identifier(func_name))) => (span, func_name),
             other => return make_unexpected!("identifier", other),
         };
 
         expect!(self.lexer, Token::LParen, "(");
         let params = try!(self.parse_param_list());
-        let dummy_span = expect!(self.lexer, Token::RParen, ")");
+        expect!(self.lexer, Token::RParen, ")");
 
         let ret_ty = if match_peek_token!(self.lexer => Token::Arrow) {
             self.lexer.next();
             try!(self.parse_type())
         } else {
-            Type::Unit { span: dummy_span }
+            Type::Unit
         };
+
+        let func_info = self.sema.sema_function_def_begin(func_name, params, ret_ty, name_span);
 
         let block = try!(self.parse_block());
         let span = Span::merge(func_span, block.span);
 
-        Ok(Function {
-            name: func_name,
-            params: params,
-            ret_ty: ret_ty,
-            block: block,
-            span: span,
-        })
+        Ok(self.sema.sema_function_def_end(func_info, block, span))
     }
 
     pub fn parse_param_list(&mut self) -> Result<Vec<Param>, ParseError> {
@@ -151,13 +144,12 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
     pub fn parse_param(&mut self) -> Result<Param, ParseError> {
         // param = IDENTIFIER ':' type
-        let (begin_span, name) = match self.lexer.next() {
+        let (span, name) = match self.lexer.next() {
             Some((span, Token::Identifier(name))) => (span, name),
             other => return make_unexpected!("identifier", other),
         };
         expect!(self.lexer, Token::Colon, ":");
         let ty = try!(self.parse_type());
-        let span = Span::merge(begin_span, ty.span());
         Ok(Param {
             name: name,
             ty: ty,
@@ -169,15 +161,18 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         // block = '{' statement* '}'
 
         let begin_span = expect!(self.lexer, Token::LBrace, "{");
+        self.sema.symbol_table.begin_scope();
 
         let mut stmts = Vec::new();
         while self.lexer.peek().is_some() && !match_peek_token!(self.lexer => Token::RBrace) {
             stmts.push(try!(self.parse_statement()));
         }
+
         let end_span = expect!(self.lexer, Token::RBrace, "}");
+        self.sema.symbol_table.end_scope();
 
         Ok(Block {
-            stmts: stmts,
+            statements: stmts,
             span: Span::merge(begin_span, end_span),
         })
     }
@@ -224,21 +219,24 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let expr = try!(self.parse_expression());
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
 
-        Ok(Statement::Let {
-            id: id,
-            ty: ty,
-            expr: expr,
-            span: Span::merge(kw_span, end_span),
-        })
+
+        Ok(self.sema.sema_let_stmt(id, ty, expr, Span::merge(kw_span, end_span)))
     }
 
     pub fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
         // if-statement = "if" expression statement [ "else" statement ]
 
         let kw_span = expect!(self.lexer, Token::IfKw, "if");
-
         let condition = try!(self.parse_expression());
-        let stmt = try!(self.parse_statement());
+
+        // if stmt
+        self.sema.symbol_table.begin_scope();
+        let if_stmt = try!(self.parse_statement());
+        self.sema.symbol_table.end_scope();
+
+
+        // else stmt
+        self.sema.symbol_table.begin_scope();
         let else_stmt = {
             if match_peek_token!(self.lexer => Token::ElseKw) {
                 self.lexer.next();
@@ -247,27 +245,37 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
                 None
             }
         };
+        self.sema.symbol_table.end_scope();
+
+
         let end_span = if let Some(ref else_stmt) = else_stmt {
             else_stmt.span()
         } else {
-            stmt.span()
+            if_stmt.span()
         };
-        Ok(Statement::If {
-            cond: condition,
-            if_stmt: Box::new(stmt),
-            else_stmt: else_stmt.map(Box::new),
-            span: Span::merge(kw_span, end_span),
-        })
+
+        Ok(self.sema.sema_if_stmt(condition,
+                                  if_stmt,
+                                  else_stmt,
+                                  Span::merge(kw_span, end_span)))
     }
 
     pub fn parse_loop_statement(&mut self) -> Result<Statement, ParseError> {
         // loop-statement = "loop" statement
 
         let kw_span = expect!(self.lexer, Token::LoopKw, "loop");
+
+        // loop stmt
+        self.sema.symbol_table.begin_scope();
+        self.sema.loop_level += 1;
         let stmt = try!(self.parse_statement());
+        self.sema.symbol_table.end_scope();
+        self.sema.loop_level -= 1;
+
+
         let span = Span::merge(kw_span, stmt.span());
         Ok(Statement::Loop {
-            stmt: Box::new(stmt),
+            statement: Box::new(stmt),
             span: span,
         })
     }
@@ -277,13 +285,16 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
         let kw_span = expect!(self.lexer, Token::WhileKw, "while");
         let condition = try!(self.parse_expression());
+
+        // while stmt
+        self.sema.symbol_table.begin_scope();
+        self.sema.loop_level += 1;
         let stmt = try!(self.parse_statement());
+        self.sema.symbol_table.end_scope();
+        self.sema.loop_level -= 1;
+
         let span = Span::merge(kw_span, stmt.span());
-        Ok(Statement::While {
-            cond: condition,
-            stmt: Box::new(stmt),
-            span: span,
-        })
+        Ok(self.sema.sema_while_stmt(condition, stmt, span))
     }
 
     pub fn parse_break_statement(&mut self) -> Result<Statement, ParseError> {
@@ -292,7 +303,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let kw_span = expect!(self.lexer, Token::BreakKw, "break");
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
-        Ok(Statement::Break { span: span })
+        Ok(self.sema.sema_break_stmt(span))
     }
 
     pub fn parse_continue_statement(&mut self) -> Result<Statement, ParseError> {
@@ -301,20 +312,23 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let kw_span = expect!(self.lexer, Token::ContinueKw, "continue");
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
-        Ok(Statement::Continue { span: span })
+        Ok(self.sema.sema_continue_stmt(span))
     }
 
     pub fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
-        // return-statement = "return" expression ";"
+        // return-statement = "return" [ expression ] ";"
 
         let kw_span = expect!(self.lexer, Token::ReturnKw, "return");
-        let expr = try!(self.parse_expression());
+        let expr = if match_peek_token!(self.lexer => Token::SemiColon) {
+            Expression::UnitLit { span: kw_span }
+        } else {
+            try!(self.parse_expression())
+        };
+
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
-        Ok(Statement::Return {
-            expr: expr,
-            span: span,
-        })
+
+        Ok(self.sema.sema_return_stmt(expr, span))
     }
 
     pub fn parse_block_statement(&mut self) -> Result<Statement, ParseError> {
@@ -330,7 +344,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(expr.span(), end_span);
         Ok(Statement::Expression {
-            expr: expr,
+            expression: expr,
             span: span,
         })
     }
@@ -348,11 +362,8 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             expect!(self.lexer, Token::AssignOp, "=");
             let value = try!(self.parse_expression());
             let span = Span::merge(begin_span, value.span());
-            Ok(Expression::Assign {
-                id: id,
-                value: Box::new(value),
-                span: span,
-            })
+            let id_expr = self.sema.sema_identifier(id, begin_span);
+            Ok(self.sema.sema_binop_assign(id_expr, value, span))
         } else {
             self.parse_logical_or()
         }
@@ -365,12 +376,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             self.lexer.next();
             let rhs = try!(self.parse_logical_and());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = Expression::SCBinOp {
-                kind: SCBinOpKind::LogicalOr,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                span: span,
-            };
+            lhs = self.sema.sema_binop_expr(BinOpKind::LogicalOr, lhs, rhs, span);
         }
         Ok(lhs)
     }
@@ -382,12 +388,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             self.lexer.next();
             let rhs = try!(self.parse_eq_comp());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = Expression::SCBinOp {
-                kind: SCBinOpKind::LogicalAnd,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                span: span,
-            };
+            lhs = self.sema.sema_binop_expr(BinOpKind::LogicalAnd, lhs, rhs, span);
         }
         Ok(lhs)
     }
@@ -405,12 +406,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             };
             let rhs = try!(self.parse_ord_comp());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = Expression::BinOp {
-                kind: binop_kind,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                span: span,
-            };
+            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
         }
         Ok(lhs)
     }
@@ -434,12 +430,7 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
             };
             let rhs = try!(self.parse_sum());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = Expression::BinOp {
-                kind: binop_kind,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                span: span,
-            };
+            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
         }
         Ok(lhs)
     }
@@ -458,20 +449,15 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
 
             let rhs = try!(self.parse_factor());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = Expression::BinOp {
-                kind: binop_kind,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                span: span,
-            };
+            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
         }
         Ok(lhs)
     }
 
     pub fn parse_factor(&mut self) -> Result<Expression, ParseError> {
-        // factor = term { [*|/|%] term }
+        // factor = cast { [*|/|%] cast }
 
-        let mut lhs = try!(self.parse_term());
+        let mut lhs = try!(self.parse_cast());
         while self.lexer.peek().is_some() &&
               match_peek_token!(self.lexer => Token::TimesOp | Token::DivideOp | Token::ModOp) {
             let binop_kind = match self.lexer.next() {
@@ -481,14 +467,23 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
                 _ => unreachable!(),
             };
 
-            let rhs = try!(self.parse_term());
+            let rhs = try!(self.parse_cast());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = Expression::BinOp {
-                kind: binop_kind,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                span: span,
-            };
+            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
+        }
+        Ok(lhs)
+    }
+
+    pub fn parse_cast(&mut self) -> Result<Expression, ParseError> {
+        // cast = term [ "as" type ]
+
+        let mut lhs = try!(self.parse_term());
+        if match_peek_token!(self.lexer => Token::AsKw) {
+            let as_span = expect!(self.lexer, Token::AsKw, "as");
+            let ty = try!(self.parse_type());
+
+            let span = Span::merge(lhs.span(), as_span);
+            lhs = self.sema.sema_cast_expr(lhs, ty, span);
         }
         Ok(lhs)
     }
@@ -514,58 +509,65 @@ impl<L: IntoIterator<Item = (Span, Token)>> Parser<L> {
                         }
                     }
                     let end_span = expect!(self.lexer, Token::RParen, ")");
-                    Expression::FuncCall {
-                        func_name: id,
-                        args: args,
-                        span: Span::merge(span, end_span),
-                    }
+                    self.sema.sema_func_call(id, args, Span::merge(span, end_span))
                 } else {
-                    Expression::Identifier {
-                        id: id,
-                        span: span,
-                    }
+                    self.sema.sema_identifier(id, span)
                 }
             }
-            Some((span, Token::Number(value))) => {
-                Expression::Number {
+            Some((span, Token::IntLit(value))) => {
+                Expression::IntLit {
+                    value: value,
+                    span: span,
+                }
+            }
+            Some((span, Token::UIntLit(value))) => {
+                Expression::UIntLit {
+                    value: value,
+                    span: span,
+                }
+            }
+            Some((span, Token::DoubleLit(value))) => {
+                Expression::DoubleLit {
+                    value: value,
+                    span: span,
+                }
+            }
+            Some((span, Token::CharLit(value))) => {
+                Expression::CharLit {
+                    value: value,
+                    span: span,
+                }
+            }
+            Some((span, Token::BoolLit(value))) => {
+                Expression::BoolLit {
                     value: value,
                     span: span,
                 }
             }
             Some((span, Token::LParen)) => {
                 let expr = try!(self.parse_expression());
+                let expr_ty = expr.ty();
                 let end_span = expect!(self.lexer, Token::RParen, ")");
                 Expression::Paren {
-                    expr: Box::new(expr),
+                    expression: Box::new(expr),
                     span: Span::merge(span, end_span),
+                    ty: expr_ty,
                 }
             }
             Some((span, Token::LogNotOp)) => {
                 let expr = try!(self.parse_term());
                 let span = Span::merge(span, expr.span());
-                Expression::UnOp {
-                    kind: UnOpKind::LogNot,
-                    expr: Box::new(expr),
-                    span: span,
-                }
+                self.sema.sema_unop_expr(UnOpKind::LogicalNot, expr, span)
             }
             Some((span, Token::PlusOp)) => {
                 let expr = try!(self.parse_term());
                 let span = Span::merge(span, expr.span());
-                Expression::UnOp {
-                    kind: UnOpKind::Plus,
-                    expr: Box::new(expr),
-                    span: span,
-                }
+                self.sema.sema_unop_expr(UnOpKind::Plus, expr, span)
             }
             Some((span, Token::MinusOp)) => {
                 let expr = try!(self.parse_term());
                 let span = Span::merge(span, expr.span());
-                Expression::UnOp {
-                    kind: UnOpKind::Minus,
-                    expr: Box::new(expr),
-                    span: span,
-                }
+                self.sema.sema_unop_expr(UnOpKind::Minus, expr, span)
             }
             other => return make_unexpected!("identifier, number, (, +, -", other),
         };

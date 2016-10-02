@@ -8,16 +8,14 @@ mod double_peekable;
 mod source;
 mod token;
 mod lexer;
-// mod ast;
-mod parse_tree;
+mod ast;
 mod parser;
 mod diagnostic;
-// mod ir;
-// mod cgen;
 
 use source::Manager;
 use lexer::Lexer;
 use parser::Parser;
+use ast::sema::Sema;
 
 const USAGE: &'static str = "
 Usage: elang [options] INPUT
@@ -46,7 +44,7 @@ struct Args {
 enum EmitType {
     // Ir,
     // C,
-    Pretty,
+    AST,
 }
 
 fn main() {
@@ -57,7 +55,8 @@ fn main() {
     let diagnostic_engine = diagnostic::DiagnosticEngine::new(&source_manager.source, args.flag_W);
 
     let lexer = Lexer::new(source_reader, &diagnostic_engine);
-    let mut parser = Parser::new(lexer);
+    let sema = Sema::new(&diagnostic_engine);
+    let mut parser = Parser::new(lexer, sema);
 
     let program = match parser.parse_program() {
         Ok(program) => program,
@@ -65,7 +64,7 @@ fn main() {
     };
 
     // let emit_type = args.flag_emit.unwrap_or(EmitType::C);
-    let emit_type = args.flag_emit.unwrap_or(EmitType::Pretty);
+    let emit_type = args.flag_emit.unwrap_or(EmitType::AST);
 
     let output_content = match emit_type {
         // EmitType::Ir => {
@@ -76,7 +75,7 @@ fn main() {
         //     let module = get_module(program, &diagnostic_engine, args.flag_O);
         //     cgen::generate(module)
         // }
-        EmitType::Pretty => parse_tree::pretty_printer::print(&program),
+        EmitType::AST => ast::pretty_printer::print(&program),
     };
 
     if let Some(output_path) = args.flag_o {
