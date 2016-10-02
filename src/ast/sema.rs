@@ -483,7 +483,7 @@ impl<'a> Sema<'a> {
     pub fn l2r_if_needed(&mut self, expr: Expression) -> Expression {
         let expr_ty = expr.ty();
         if let Type::LVal(sub_ty) = expr_ty {
-            Expression::Cast {
+            Expression::L2R {
                 span: expr.span(),
                 expression: Box::new(expr),
                 ty: *sub_ty,

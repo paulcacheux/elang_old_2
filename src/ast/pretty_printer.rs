@@ -196,6 +196,11 @@ impl PrettyPrinter {
 
                 self.output.push(')');
             }
+            Expression::L2R { ref expression, .. } => {
+                self.output.push_str("l2r(");
+                self.print_expression(expression);
+                self.output.push_str(")");
+            }
             Expression::Cast { ref expression, ref ty, .. } => {
                 self.print_expression(expression);
                 self.output.push_str(" as ");

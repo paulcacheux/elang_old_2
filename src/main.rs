@@ -42,8 +42,7 @@ struct Args {
 
 #[derive(RustcDecodable, Debug, Clone, Copy, PartialEq, Eq)]
 enum EmitType {
-    // Ir,
-    // C,
+    C,
     AST,
 }
 
@@ -63,18 +62,10 @@ fn main() {
         Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
     };
 
-    // let emit_type = args.flag_emit.unwrap_or(EmitType::C);
-    let emit_type = args.flag_emit.unwrap_or(EmitType::AST);
+    let emit_type = args.flag_emit.unwrap_or(EmitType::C);
 
     let output_content = match emit_type {
-        // EmitType::Ir => {
-        //     let module = get_module(program, &diagnostic_engine, args.flag_O);
-        //     module.to_string()
-        // }
-        // EmitType::C => {
-        //     let module = get_module(program, &diagnostic_engine, args.flag_O);
-        //     cgen::generate(module)
-        // }
+        EmitType::C => ast::cgen::generate_program(program),
         EmitType::AST => ast::pretty_printer::print(&program),
     };
 
@@ -84,14 +75,3 @@ fn main() {
         println!("{}", output_content);
     }
 }
-
-// fn get_module(program: ast::Program,
-//               diag_engine: &diagnostic::DiagnosticEngine,
-//               opt: bool)
-//               -> ir::Module {
-//     let mut module = ir::gen::generate(program, diag_engine);
-//     if opt {
-//         ir::opt::optimize(&mut module);
-//     }
-//     module
-// }

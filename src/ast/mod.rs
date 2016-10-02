@@ -2,6 +2,7 @@ use itertools::Itertools;
 
 pub mod pretty_printer;
 pub mod sema;
+pub mod cgen;
 
 use std::fmt;
 
@@ -132,6 +133,11 @@ pub enum Expression {
         span: Span,
         ty: Type,
     },
+    L2R {
+        expression: Box<Expression>,
+        ty: Type,
+        span: Span,
+    },
     Cast {
         expression: Box<Expression>,
         ty: Type,
@@ -157,6 +163,7 @@ impl Expression {
             Expression::UnOp { span, .. } |
             Expression::Paren { span, .. } |
             Expression::FuncCall { span, .. } |
+            Expression::L2R { span, .. } |
             Expression::Cast { span, .. } |
             Expression::Identifier { span, .. } |
             Expression::IntLit { span, .. } |
@@ -174,6 +181,7 @@ impl Expression {
             Expression::UnOp { ref ty, .. } |
             Expression::Paren { ref ty, .. } |
             Expression::FuncCall { ref ty, .. } |
+            Expression::L2R { ref ty, .. } |
             Expression::Cast { ref ty, .. } |
             Expression::Identifier { ref ty, .. } => ty.clone(),
             Expression::IntLit { .. } => Type::Int,
