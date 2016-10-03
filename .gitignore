@@ -3,3 +3,4 @@ bitsyspec
 run_tests.sh
 ._*
 src/._*
+.DS_store

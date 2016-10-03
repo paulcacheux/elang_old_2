@@ -7,6 +7,7 @@ pub fn generate_program(program: Program) -> String {
         "#include <stdlib.h>\n",
         "#include <stdio.h>\n\n",
         "void print(int x) { printf(\"%d\", x); }\n\n",
+        "void printchar(char x) { printf(\"%c\", x); }\n\n",
         "void println(int x) { printf(\"%d\\n\", x); }\n\n",
         "int read(void) { int x; scanf(\"%d\", &x); return x; }\n\n"
     );

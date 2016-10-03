@@ -71,6 +71,10 @@ impl<'a> Sema<'a> {
             Type::Function(vec![Type::Int], Box::new(Type::Unit))
         );
         self.symbol_table.insert(
+            "printchar".to_string(),
+            Type::Function(vec![Type::Char], Box::new(Type::Unit))
+        );
+        self.symbol_table.insert(
             "println".to_string(),
             Type::Function(vec![Type::Int], Box::new(Type::Unit))
         );
