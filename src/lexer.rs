@@ -256,11 +256,23 @@ impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
                 }
                 '(' => (Span::new_with_len(bytepos, 1), Token::LParen),
                 ')' => (Span::new_with_len(bytepos, 1), Token::RParen),
-                '+' => (Span::new_with_len(bytepos, 1), Token::PlusOp),
-                '-' => self.if_next('>', Token::Arrow, Token::MinusOp, bytepos),
-                '*' => (Span::new_with_len(bytepos, 1), Token::TimesOp),
-                '/' => (Span::new_with_len(bytepos, 1), Token::DivideOp),
-                '%' => (Span::new_with_len(bytepos, 1), Token::ModOp),
+                '+' => self.if_next('=', Token::AssignPlusOp, Token::PlusOp, bytepos),
+                '-' => {
+                    match self.input.peek() {
+                        Some(&(_, '>')) => {
+                            self.input.next();
+                            (Span::new_with_len(bytepos, 2), Token::Arrow)
+                        }
+                        Some(&(_, '=')) => {
+                            self.input.next();
+                            (Span::new_with_len(bytepos, 2), Token::AssignMinusOp)
+                        }
+                        _ => (Span::new_with_len(bytepos, 1), Token::MinusOp),
+                    }
+                }
+                '*' => self.if_next('=', Token::AssignTimesOp, Token::TimesOp, bytepos),
+                '/' => self.if_next('=', Token::AssignDivOp, Token::DivOp, bytepos),
+                '%' => self.if_next('=', Token::AssignModOp, Token::ModOp, bytepos),
                 ',' => (Span::new_with_len(bytepos, 1), Token::Comma),
                 '{' => (Span::new_with_len(bytepos, 1), Token::LBrace),
                 '}' => (Span::new_with_len(bytepos, 1), Token::RBrace),

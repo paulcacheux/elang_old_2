@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use ast::{Program, Type, Function, Param, Block, Statement, Expression, BinOpKind, UnOpKind};
+use ast::{Program, Type, Function, Param, Block, Statement, Expression, AssignOpKind, BinOpKind, UnOpKind};
 
 pub fn generate_program(program: Program) -> String {
     let header = concat!(
@@ -105,12 +105,26 @@ fn generate_statement(statement: Statement) -> String {
 
 fn generate_expression(expression: Expression) -> String {
     match expression {
+        Expression::AssignOp { kind, lhs, rhs, .. } => {
+            format!(
+                "({} {} {})",
+                generate_expression(*lhs),
+                match kind {
+                    AssignOpKind::Normal => "=",
+                    AssignOpKind::Add => "+=",
+                    AssignOpKind::Sub => "-=",
+                    AssignOpKind::Mul => "*=",
+                    AssignOpKind::Div => "/=",
+                    AssignOpKind::Mod => "%=",
+                },
+                generate_expression(*rhs)
+            )
+        }
         Expression::BinOp { kind, lhs, rhs, .. } => {
             format!(
                 "({} {} {})",
                 generate_expression(*lhs),
                 match kind {
-                    BinOpKind::Assign => "=",
                     BinOpKind::Add => "+",
                     BinOpKind::Sub => "-",
                     BinOpKind::Mul => "*",
@@ -135,6 +149,8 @@ fn generate_expression(expression: Expression) -> String {
                     UnOpKind::Plus => "+",
                     UnOpKind::Minus => "-",
                     UnOpKind::LogicalNot => "!",
+                    UnOpKind::Deref => "*",
+                    UnOpKind::AddressOf => "&",
                 },
                 generate_expression(*expression)
             )

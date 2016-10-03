@@ -83,8 +83,30 @@ impl Statement {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssignOpKind {
+    Normal,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+impl AssignOpKind {
+    pub fn to_binop(self) -> Option<BinOpKind> {
+        match self {
+            AssignOpKind::Normal => None,
+            AssignOpKind::Add => Some(BinOpKind::Add),
+            AssignOpKind::Sub => Some(BinOpKind::Sub),
+            AssignOpKind::Mul => Some(BinOpKind::Mul),
+            AssignOpKind::Div => Some(BinOpKind::Div),
+            AssignOpKind::Mod => Some(BinOpKind::Mod),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOpKind {
-    Assign,
     Add,
     Sub,
     Mul,
@@ -105,10 +127,19 @@ pub enum UnOpKind {
     Plus,
     Minus,
     LogicalNot,
+    Deref,
+    AddressOf,
 }
 
 #[derive(Debug, Clone)]
 pub enum Expression {
+    AssignOp {
+        kind: AssignOpKind,
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+        span: Span,
+        ty: Type,
+    },
     BinOp {
         kind: BinOpKind,
         lhs: Box<Expression>,
@@ -159,6 +190,7 @@ pub enum Expression {
 impl Expression {
     pub fn span(&self) -> Span {
         match *self {
+            Expression::AssignOp { span, .. } |
             Expression::BinOp { span, .. } |
             Expression::UnOp { span, .. } |
             Expression::Paren { span, .. } |
@@ -177,6 +209,7 @@ impl Expression {
 
     pub fn ty(&self) -> Type {
         match *self {
+            Expression::AssignOp { ref ty, .. } |
             Expression::BinOp { ref ty, .. } |
             Expression::UnOp { ref ty, .. } |
             Expression::Paren { ref ty, .. } |

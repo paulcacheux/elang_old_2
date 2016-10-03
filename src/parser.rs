@@ -1,7 +1,7 @@
 use double_peekable::DoublePeekable;
 use source::Span;
 use token::Token;
-use ast::{Program, Type, BinOpKind, UnOpKind, Function, Param, Block, Statement, Expression};
+use ast::{Program, Type, AssignOpKind, BinOpKind, UnOpKind, Function, Param, Block, Statement, Expression};
 use ast::sema::Sema;
 
 pub struct Parser<'a, L: IntoIterator<Item = (Span, Token)>> {
@@ -350,23 +350,31 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
     }
 
     pub fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        // expression = IDENTIFIER '=' expression
-        //            | logical_or
+        // expression = logical_or [ assign-op expression ]
 
-        if self.lexer.peek().is_some() &&
-           match_peek_token!(self.lexer => Token::Identifier(_), Token::AssignOp) {
-            let (begin_span, id) = match self.lexer.next() {
-                Some((span, Token::Identifier(id))) => (span, id),
+        let mut lhs = try!(self.parse_logical_or());
+        if self.lexer.peek().is_some() && match_peek_token!(self.lexer =>
+            Token::AssignOp |
+            Token::AssignPlusOp |
+            Token::AssignMinusOp |
+            Token::AssignTimesOp |
+            Token::AssignDivOp |
+            Token::AssignModOp
+        ) {
+            let assignop_kind = match self.lexer.next() {
+                Some((_, Token::AssignOp)) => AssignOpKind::Normal,
+                Some((_, Token::AssignPlusOp)) => AssignOpKind::Add,
+                Some((_, Token::AssignMinusOp)) => AssignOpKind::Sub,
+                Some((_, Token::AssignTimesOp)) => AssignOpKind::Mul,
+                Some((_, Token::AssignDivOp)) => AssignOpKind::Div,
+                Some((_, Token::AssignModOp)) => AssignOpKind::Mod,
                 _ => unreachable!(),
             };
-            expect!(self.lexer, Token::AssignOp, "=");
-            let value = try!(self.parse_expression());
-            let span = Span::merge(begin_span, value.span());
-            let id_expr = self.sema.sema_identifier(id, begin_span);
-            Ok(self.sema.sema_binop_assign(id_expr, value, span))
-        } else {
-            self.parse_logical_or()
+            let rhs = try!(self.parse_expression());
+            let span = Span::merge(lhs.span(), rhs.span());
+            lhs = self.sema.sema_assignop_expr(assignop_kind, lhs, rhs, span);
         }
+        Ok(lhs)
     }
 
     pub fn parse_logical_or(&mut self) -> Result<Expression, ParseError> {
@@ -459,10 +467,10 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
 
         let mut lhs = try!(self.parse_cast());
         while self.lexer.peek().is_some() &&
-              match_peek_token!(self.lexer => Token::TimesOp | Token::DivideOp | Token::ModOp) {
+              match_peek_token!(self.lexer => Token::TimesOp | Token::DivOp | Token::ModOp) {
             let binop_kind = match self.lexer.next() {
                 Some((_, Token::TimesOp)) => BinOpKind::Mul,
-                Some((_, Token::DivideOp)) => BinOpKind::Div,
+                Some((_, Token::DivOp)) => BinOpKind::Div,
                 Some((_, Token::ModOp)) => BinOpKind::Mod,
                 _ => unreachable!(),
             };
@@ -569,7 +577,17 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
                 let span = Span::merge(span, expr.span());
                 self.sema.sema_unop_expr(UnOpKind::Minus, expr, span)
             }
-            other => return make_unexpected!("identifier, number, (, +, -", other),
+            Some((span, Token::AmpOp)) => {
+                let expr = try!(self.parse_term());
+                let span = Span::merge(span, expr.span());
+                self.sema.sema_unop_expr(UnOpKind::AddressOf, expr, span)
+            }
+            Some((span, Token::TimesOp)) => {
+                let expr = try!(self.parse_term());
+                let span = Span::merge(span, expr.span());
+                self.sema.sema_unop_expr(UnOpKind::Deref, expr, span)
+            }
+            other => return make_unexpected!("identifier, literal, (, +, -, *, &", other),
         };
         Ok(term)
     }

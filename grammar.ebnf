@@ -53,9 +53,16 @@ let-statement = "let" IDENTIFIER [ ':' type ] "=" expression ";"
 expr-statement = expression ";"
                ;
 
-expression = IDENTIFIER '=' expression
-           | logical_or
+expression = logical_or [ assign-op expression ]
            ;
+
+assign-op = "="
+          | "+="
+          | "-="
+          | "*="
+          | "/="
+          | "%="
+          ;
 
 logical_or = logical_and { "||" logical_and }
            ;
@@ -81,7 +88,7 @@ cast = term [ "as" type ]
 term = IDENTIFIER
      | IDENTIFIER '(' expr_list ')'
      | LITERAL
-     | [+|-|!] term
+     | [+|-|!|&|*] term
      | '(' expression ')'
      ;
 

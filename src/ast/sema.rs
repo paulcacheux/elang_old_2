@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use diagnostic::DiagnosticEngine;
-use ast::{Type, Function, Param, Block, Statement, Expression, BinOpKind,
+use ast::{Type, Function, Param, Block, Statement, Expression, AssignOpKind, BinOpKind,
           UnOpKind};
 use source::Span;
 
@@ -262,15 +262,25 @@ impl<'a> Sema<'a> {
         }
     }
 
-    pub fn sema_binop_assign(&mut self,
-                             lhs: Expression,
-                             rhs: Expression,
-                             span: Span) -> Expression {
+    pub fn sema_assignop_expr(&mut self,
+                              kind: AssignOpKind,
+                              lhs: Expression,
+                              rhs: Expression,
+                              span: Span) -> Expression {
         let rhs = self.l2r_if_needed(rhs);
         let rhs_ty = rhs.ty();
 
-        if let Type::LVal(lhs_ty) = lhs.ty() {
-            if *lhs_ty != rhs_ty {
+        let res_ty = if let Type::LVal(lhs_ty) = lhs.ty() {
+            if let Some(binop_kind) = kind.to_binop() {
+                if let Some(res_ty) = get_binop_ty(binop_kind, &lhs_ty, &rhs_ty) {
+                    res_ty
+                } else {
+                    self.diag_engine.report_sema_error(
+                        format!("{:?} is undefined between {} and {}", binop_kind, lhs_ty, rhs_ty),
+                        span
+                    )
+                }
+            } else if *lhs_ty != rhs_ty {
                 self.diag_engine.report_sema_error(
                     format!(
                         "Mismatching types in assignment (expected: {}, given: {})",
@@ -279,20 +289,22 @@ impl<'a> Sema<'a> {
                     ),
                     span
                 )
+            } else {
+                *lhs_ty
             }
         } else {
             self.diag_engine.report_sema_error(
                 "The left hand side of an assignement must be a reference".to_string(),
                 span,
             )
-        }
+        };
 
-        Expression::BinOp {
-            kind: BinOpKind::Assign,
+        Expression::AssignOp {
+            kind: kind,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
             span: span,
-            ty: rhs_ty,
+            ty: res_ty,
         }
     }
 
@@ -301,57 +313,25 @@ impl<'a> Sema<'a> {
                            lhs: Expression,
                            rhs: Expression,
                            span: Span) -> Expression {
-        enum Domain {
-            Maths,
-            Comp,
-            Logical,
-            Other,
-        }
-
-        let domain = match kind {
-            BinOpKind::Add |
-            BinOpKind::Sub |
-            BinOpKind::Mul |
-            BinOpKind::Div |
-            BinOpKind::Mod => Domain::Maths,
-            BinOpKind::Less |
-            BinOpKind::LessEq |
-            BinOpKind::Greater |
-            BinOpKind::GreaterEq |
-            BinOpKind::Equal |
-            BinOpKind::NotEqual => Domain::Comp,
-            BinOpKind::LogicalOr |
-            BinOpKind::LogicalAnd => Domain::Logical,
-            _ => Domain::Other,
-        };
-
         let lhs = self.l2r_if_needed(lhs);
         let rhs = self.l2r_if_needed(rhs);
 
-        let ty = match (domain, lhs.ty(), rhs.ty()) {
-            (Domain::Maths, Type::Int, Type::Int) => Type::Int,
-            (Domain::Maths, Type::UInt, Type::UInt) => Type::UInt,
-            (Domain::Maths, Type::Double, Type::Double) => Type::Double,
-            (Domain::Comp, Type::Int, Type::Int) => Type::Bool,
-            (Domain::Comp, Type::UInt, Type::UInt) => Type::Bool,
-            (Domain::Comp, Type::Bool, Type::Bool) => Type::Bool,
-            (Domain::Comp, Type::Char, Type::Char) => Type::Bool,
-            (Domain::Comp, Type::Double, Type::Double) => Type::Bool,
-            (Domain::Logical, Type::Bool, Type::Bool) => Type::Bool,
-            (_, lt, rt) => {
-                self.diag_engine.report_sema_error(
-                    format!("{:?} is undefined between {} and {}", kind, lt, rt),
-                    span
-                )
-            }
-        };
+        let lhs_ty = lhs.ty();
+        let rhs_ty = rhs.ty();
 
-        Expression::BinOp {
-            kind: kind,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-            span: span,
-            ty: ty,
+        if let Some(ty) = get_binop_ty(kind, &lhs_ty, &rhs_ty) {
+            Expression::BinOp {
+                kind: kind,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                span: span,
+                ty: ty,
+            }
+        } else {
+            self.diag_engine.report_sema_error(
+                format!("{:?} is undefined between {} and {}", kind, lhs_ty, rhs_ty),
+                span
+            )
         }
     }
 
@@ -365,6 +345,8 @@ impl<'a> Sema<'a> {
             (UnOpKind::Minus, Type::Int) => Type::Int,
             (UnOpKind::Minus, Type::Double) => Type::Double,
             (UnOpKind::LogicalNot, Type::Bool) => Type::Bool,
+            (UnOpKind::Deref, Type::Ptr(sub_ty)) => *sub_ty,
+            (UnOpKind::AddressOf, ty) => Type::Ptr(Box::new(ty)),
             (kind, et) => {
                 self.diag_engine.report_sema_error(
                     format!("{:?} is undefined for {}", kind, et),
@@ -495,5 +477,42 @@ impl<'a> Sema<'a> {
         } else {
             expr
         }
+    }
+}
+
+fn get_binop_ty(kind: BinOpKind, lhs_ty: &Type, rhs_ty: &Type) -> Option<Type> {
+    enum Domain {
+        Maths,
+        Comp,
+        Logical,
+    }
+
+    let domain = match kind {
+        BinOpKind::Add |
+        BinOpKind::Sub |
+        BinOpKind::Mul |
+        BinOpKind::Div |
+        BinOpKind::Mod => Domain::Maths,
+        BinOpKind::Less |
+        BinOpKind::LessEq |
+        BinOpKind::Greater |
+        BinOpKind::GreaterEq |
+        BinOpKind::Equal |
+        BinOpKind::NotEqual => Domain::Comp,
+        BinOpKind::LogicalOr |
+        BinOpKind::LogicalAnd => Domain::Logical,
+    };
+
+    match (domain, lhs_ty, rhs_ty) {
+        (Domain::Maths, &Type::Int, &Type::Int) => Some(Type::Int),
+        (Domain::Maths, &Type::UInt, &Type::UInt) => Some(Type::UInt),
+        (Domain::Maths, &Type::Double, &Type::Double) => Some(Type::Double),
+        (Domain::Comp, &Type::Int, &Type::Int) => Some(Type::Bool),
+        (Domain::Comp, &Type::UInt, &Type::UInt) => Some(Type::Bool),
+        (Domain::Comp, &Type::Bool, &Type::Bool) => Some(Type::Bool),
+        (Domain::Comp, &Type::Char, &Type::Char) => Some(Type::Bool),
+        (Domain::Comp, &Type::Double, &Type::Double) => Some(Type::Bool),
+        (Domain::Logical, &Type::Bool, &Type::Bool) => Some(Type::Bool),
+        _ => None
     }
 }
