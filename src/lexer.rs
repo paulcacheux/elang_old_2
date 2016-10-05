@@ -2,8 +2,8 @@ use std::str::FromStr;
 
 use double_peekable::DoublePeekable;
 use token::Token;
-use source::Span;
-use diagnostic::DiagnosticEngine;
+use source::{Span, Reader};
+use error::{LexError, LexErrorKind, CodeError};
 
 fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     let span = Span::new_with_len(bytepos, raw.len());
@@ -25,23 +25,29 @@ fn identifier_or_keyword(raw: String, bytepos: usize) -> (Span, Token) {
     (span, token)
 }
 
-fn is_identifier_char(c: char) -> bool {
+fn is_identifier_start(c: char) -> bool {
     match c {
         'a'...'z' | 'A'...'Z' | '_' => true,
         _ => false,
     }
 }
 
-pub struct Lexer<'a, R: Iterator<Item = (usize, char)>> {
-    input: DoublePeekable<R>,
-    diagnostic: &'a DiagnosticEngine<'a>,
+fn is_identifier_continue(c: char) -> bool {
+    match c {
+        '0'...'9' => true,
+        c if is_identifier_start(c) => true,
+        _ => false,
+    }
 }
 
-impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
-    pub fn new(input: R, diag: &'a DiagnosticEngine<'a>) -> Lexer<'a, R> {
+pub struct Lexer<'a> {
+    input: DoublePeekable<Reader<'a>>,
+}
+
+impl<'a> Lexer<'a> {
+    pub fn new(input: Reader<'a>) -> Lexer<'a> {
         Lexer {
             input: DoublePeekable::new(input),
-            diagnostic: diag,
         }
     }
 
@@ -77,8 +83,14 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
     fn skip_to_endline(&mut self) {
         loop {
             match self.input.peek() {
-                Some(&(_, '\n')) => break,
-                Some(_) => continue,
+                Some(&(_, '\n')) => {
+                    self.input.next();
+                    break;
+                }
+                Some(_) => {
+                    self.input.next();
+                    continue;
+                }
                 None => break,
             }
         }
@@ -111,7 +123,7 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
                 self.input.next();
                 (Span::new_with_len(bytepos, 2), tok_true)
             }
-            _ => (Span::new_with_len(bytepos, 1), tok_false),
+            _ => (Span::new_one(bytepos), tok_false),
         }
     }
 
@@ -186,102 +198,98 @@ impl<'a, R: Iterator<Item = (usize, char)>> Lexer<'a, R> {
         }
     }
 
-    fn lex_char(&mut self, start_pos: usize) -> u8 {
+    fn lex_char(&mut self, start_pos: usize) -> Result<u8, CodeError> {
         if let Some((bytepos, c)) = self.input.next() {
             if c == '\\' {
                 match self.input.next() {
-                    Some((_, 'n')) => b'\n',
-                    Some((_, 'r')) => b'\r',
-                    Some((_, 't')) => b'\t',
-                    Some((_, '\\')) => b'\\',
-                    Some((_, '\'')) => b'\'',
-                    Some((_, '0')) => b'\0',
-                    Some((epos, a)) => {
-                        self.diagnostic.report_lex_error(
-                            format!("{} is not a valid escape char", a),
-                            epos
-                        )
-                    }
-                    None => {
-                        self.diagnostic.report_lex_error(
-                            "Unclosed char literal".to_string(), bytepos
-                        )
-                    }
+                    Some((_, 'n')) => Ok(b'\n'),
+                    Some((_, 'r')) => Ok(b'\r'),
+                    Some((_, 't')) => Ok(b'\t'),
+                    Some((_, '\\')) => Ok(b'\\'),
+                    Some((_, '\'')) => Ok(b'\''),
+                    Some((_, '0')) => Ok(b'\0'),
+                    Some((epos, a)) => new_lex_error(LexErrorKind::WrongEscapeChar(a), epos),
+                    None => new_lex_error(LexErrorKind::NotClosedCharLiteral, bytepos),
                 }
             } else {
-                c as u8
+                Ok(c as u8)
             }
         } else {
-            self.diagnostic.report_lex_error(
-                "Unclosed char literal".to_string(), start_pos
-            )
+            new_lex_error(LexErrorKind::NotClosedCharLiteral, start_pos)
         }
     }
 }
 
-impl<'a, R: Iterator<Item = (usize, char)>> Iterator for Lexer<'a, R> {
-    type Item = (Span, Token);
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Result<(Span, Token), CodeError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
         if let Some((bytepos, c)) = self.input.next() {
             Some(match c {
-                c if is_identifier_char(c) => {
-                    identifier_or_keyword(self.take_while(Some(c), is_identifier_char), bytepos)
+                c if is_identifier_start(c) => {
+                    Ok(identifier_or_keyword(self.take_while(Some(c), is_identifier_continue), bytepos))
                 }
-                c if c.is_digit(10) => self.lex_number_lit(c, bytepos),
+                c if c.is_digit(10) => Ok(self.lex_number_lit(c, bytepos)),
                 '\'' => {
-                    let c = self.lex_char(bytepos);
+                    let c = match self.lex_char(bytepos) {
+                        Ok(c) => c,
+                        Err(err) => return Some(Err(err))
+                    };
                     match self.input.peek() {
                         Some(&(end, '\'')) => {
                             self.input.next();
-                            (Span::new(bytepos, end + 1), Token::CharLit(c))
+                            Ok((Span::new(bytepos, end + 1), Token::CharLit(c)))
                         }
-                        _ => self.diagnostic.report_lex_error("Expected \'".to_string(), bytepos),
+                        _ => new_lex_error(LexErrorKind::Expected('\''), bytepos)
                     }
                 }
-                '<' => self.if_next('=', Token::LessEqualOp, Token::LessOp, bytepos),
-                '>' => self.if_next('=', Token::GreaterEqualOp, Token::GreaterOp, bytepos),
-                '=' => self.if_next('=', Token::EqualOp, Token::AssignOp, bytepos),
-                '!' => self.if_next('=', Token::NotEqualOp, Token::LogNotOp, bytepos),
-                '&' => self.if_next('&', Token::LogAndOp, Token::AmpOp, bytepos),
+                '<' => Ok(self.if_next('=', Token::LessEqualOp, Token::LessOp, bytepos)),
+                '>' => Ok(self.if_next('=', Token::GreaterEqualOp, Token::GreaterOp, bytepos)),
+                '=' => Ok(self.if_next('=', Token::EqualOp, Token::AssignOp, bytepos)),
+                '!' => Ok(self.if_next('=', Token::NotEqualOp, Token::LogNotOp, bytepos)),
+                '&' => Ok(self.if_next('&', Token::LogAndOp, Token::AmpOp, bytepos)),
                 '|' => {
                     match self.input.peek() {
                         Some(&(_, '|')) => {
                             self.input.next();
-                            (Span::new_with_len(bytepos, 2), Token::LogOrOp)
+                            Ok((Span::new_with_len(bytepos, 2), Token::LogOrOp))
                         }
-                        _ => self.diagnostic.report_lex_error("Expected |".to_string(), bytepos),
+                        _ => new_lex_error(LexErrorKind::Expected('|'), bytepos),
                     }
                 }
-                '(' => (Span::new_with_len(bytepos, 1), Token::LParen),
-                ')' => (Span::new_with_len(bytepos, 1), Token::RParen),
-                '+' => self.if_next('=', Token::AssignPlusOp, Token::PlusOp, bytepos),
+                '(' => Ok((Span::new_one(bytepos), Token::LParen)),
+                ')' => Ok((Span::new_one(bytepos), Token::RParen)),
+                '+' => Ok(self.if_next('=', Token::AssignPlusOp, Token::PlusOp, bytepos)),
                 '-' => {
                     match self.input.peek() {
                         Some(&(_, '>')) => {
                             self.input.next();
-                            (Span::new_with_len(bytepos, 2), Token::Arrow)
+                            Ok((Span::new_with_len(bytepos, 2), Token::Arrow))
                         }
                         Some(&(_, '=')) => {
                             self.input.next();
-                            (Span::new_with_len(bytepos, 2), Token::AssignMinusOp)
+                            Ok((Span::new_with_len(bytepos, 2), Token::AssignMinusOp))
                         }
-                        _ => (Span::new_with_len(bytepos, 1), Token::MinusOp),
+                        _ => Ok((Span::new_one(bytepos), Token::MinusOp)),
                     }
                 }
-                '*' => self.if_next('=', Token::AssignTimesOp, Token::TimesOp, bytepos),
-                '/' => self.if_next('=', Token::AssignDivOp, Token::DivOp, bytepos),
-                '%' => self.if_next('=', Token::AssignModOp, Token::ModOp, bytepos),
-                ',' => (Span::new_with_len(bytepos, 1), Token::Comma),
-                '{' => (Span::new_with_len(bytepos, 1), Token::LBrace),
-                '}' => (Span::new_with_len(bytepos, 1), Token::RBrace),
-                ':' => (Span::new_with_len(bytepos, 1), Token::Colon),
-                ';' => (Span::new_with_len(bytepos, 1), Token::SemiColon),
-                c => self.diagnostic.report_lex_error(format!("Unexpected char {}", c), bytepos),
+                '*' => Ok(self.if_next('=', Token::AssignTimesOp, Token::TimesOp, bytepos)),
+                '/' => Ok(self.if_next('=', Token::AssignDivOp, Token::DivOp, bytepos)),
+                '%' => Ok(self.if_next('=', Token::AssignModOp, Token::ModOp, bytepos)),
+                ',' => Ok((Span::new_one(bytepos), Token::Comma)),
+                '{' => Ok((Span::new_one(bytepos), Token::LBrace)),
+                '}' => Ok((Span::new_one(bytepos), Token::RBrace)),
+                ':' => Ok((Span::new_one(bytepos), Token::Colon)),
+                ';' => Ok((Span::new_one(bytepos), Token::SemiColon)),
+                c => new_lex_error(LexErrorKind::Expected(c), bytepos),
             })
         } else {
             None
         }
     }
+}
+
+fn new_lex_error<T>(kind: LexErrorKind, bytepos: usize) -> Result<T, CodeError> {
+    Err(CodeError::LexError(LexError(kind, bytepos)))
 }

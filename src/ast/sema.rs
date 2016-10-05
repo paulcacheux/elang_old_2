@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use diagnostic::DiagnosticEngine;
 use ast::{Type, Function, Param, Block, Statement, Expression, AssignOpKind, BinOpKind,
           UnOpKind};
 use source::Span;
+use error::{CodeError, SemaErrorKind, SemaError};
 
 #[derive(Debug, Clone)]
 pub struct SymbolTable {
@@ -47,19 +47,17 @@ pub struct FunctionInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct Sema<'a> {
+pub struct Sema {
     pub symbol_table: SymbolTable,
-    pub diag_engine: &'a DiagnosticEngine<'a>,
 
     pub current_ret_ty: Type,
     pub loop_level: usize,
 }
 
-impl<'a> Sema<'a> {
-    pub fn new(diag_engine: &'a DiagnosticEngine<'a>) -> Self {
+impl Sema {
+    pub fn new() -> Self {
         Sema {
             symbol_table: SymbolTable::new(),
-            diag_engine: diag_engine,
             current_ret_ty: Type::Unit,
             loop_level: 0,
         }
@@ -89,50 +87,48 @@ impl<'a> Sema<'a> {
                                    params: Vec<Param>,
                                    ret_ty: Type,
                                    name_span: Span)
-                                   -> FunctionInfo {
+                                   -> Result<FunctionInfo, CodeError> {
         if let Some(_) = self.symbol_table.insert(name.clone(),
                                                        Type::function_type(params.clone(),
                                                                            ret_ty.clone())) {
-            self.diag_engine
-                .report_sema_error(format!("{} is already defined as a function", name), name_span);
+            return new_sema_error(SemaErrorKind::FunctionAlreadyDefined(name), name_span);
         }
 
         self.symbol_table.begin_scope();
 
         for param in params.clone() {
             if let Some(_) = self.symbol_table.insert(param.name.clone(), param.ty) {
-                self.diag_engine
-                    .report_sema_error(format!("{} is already defined as a parameter of this \
-                                                function",
-                                               param.name),
-                                       param.span);
+                return new_sema_error(
+                    SemaErrorKind::ParameterAlreadyDefined(param.name),
+                    param.span
+                )
             }
         }
 
         self.current_ret_ty = ret_ty.clone();
 
-        FunctionInfo {
+        Ok(FunctionInfo {
             name: name,
             parameters: params,
             return_ty: ret_ty,
-        }
+        })
     }
 
     pub fn sema_function_def_end(&mut self,
                                  func_info: FunctionInfo,
                                  block: Block,
                                  span: Span)
-                                 -> Function {
+                                 -> Result<Function, CodeError> {
         self.symbol_table.end_scope();
         self.current_ret_ty = Type::Unit;
 
-        Function {
+        Ok(Function {
             name: func_info.name,
             parameters: func_info.parameters,
             return_ty: func_info.return_ty,
             block: block,
             span: span,
-        }
+        })
     }
 
     pub fn sema_let_stmt(&mut self,
@@ -140,30 +136,25 @@ impl<'a> Sema<'a> {
                          ty: Option<Type>,
                          expr: Expression,
                          span: Span)
-                         -> Statement {
-        let expr = self.l2r_if_needed(expr);
+                         -> Result<Statement, CodeError> {
+        let expr = l2r_if_needed(expr);
         let expr_ty = expr.ty();
         let ty = ty.unwrap_or(expr_ty.clone());
 
         if ty != expr_ty {
-            self.diag_engine
-                .report_sema_error(format!("Mismatching types in assigment (expected: {}, \
-                                            given: {})",
-                                           ty,
-                                           expr_ty),
-                                   span);
+            return new_sema_error(SemaErrorKind::LetMismatchingTypes(ty, expr_ty), span);
         }
 
         if let Some(_) = self.symbol_table.insert(id.clone(), ty.clone()) {
-            self.diag_engine.report_sema_error(format!("{} is already defined", id.clone()), span);
+            return new_sema_error(SemaErrorKind::LetAlreadyDefined(id.clone()), span);
         }
 
-        Statement::Let {
+        Ok(Statement::Let {
             identifier: id,
             ty: ty,
             expression: expr,
             span: span,
-        }
+        })
     }
 
     pub fn sema_if_stmt(&mut self,
@@ -171,94 +162,86 @@ impl<'a> Sema<'a> {
                         if_stmt: Statement,
                         else_stmt: Option<Statement>,
                         span: Span)
-                        -> Statement {
-        let condition = self.l2r_if_needed(condition);
+                        -> Result<Statement, CodeError> {
+        let condition = l2r_if_needed(condition);
         let cond_ty = condition.ty();
         if cond_ty != Type::Bool {
-            self.diag_engine
-                .report_sema_error(format!("If condition must be of bool type (given: {})",
-                                           cond_ty),
-                                   span);
+            return new_sema_error(SemaErrorKind::IfConditionNotBool(cond_ty), span);
         }
 
-        Statement::If {
+        Ok(Statement::If {
             condition: condition,
             if_statement: Box::new(if_stmt),
             else_statement: else_stmt.map(Box::new),
             span: span,
-        }
+        })
     }
 
     pub fn sema_while_stmt(&mut self,
                            condition: Expression,
                            stmt: Statement,
                            span: Span)
-                           -> Statement {
-        let condition = self.l2r_if_needed(condition);
+                           -> Result<Statement, CodeError> {
+        let condition = l2r_if_needed(condition);
         let cond_ty = condition.ty();
         if cond_ty != Type::Bool {
-            self.diag_engine
-                .report_sema_error(format!("While condition must be of bool type (given: {})",
-                                           cond_ty),
-                                   span);
+            return new_sema_error(SemaErrorKind::WhileConditionNotBool(cond_ty), span);
         }
 
-        Statement::While {
+        Ok(Statement::While {
             condition: condition,
             statement: Box::new(stmt),
             span: span,
-        }
+        })
     }
 
-    pub fn sema_break_stmt(&mut self, span: Span) -> Statement {
+    pub fn sema_break_stmt(&mut self, span: Span) -> Result<Statement, CodeError> {
         if self.loop_level == 0 {
-            self.diag_engine.report_sema_error("Break outside a loop".to_string(), span);
+            return new_sema_error(SemaErrorKind::BreakOutsideLoop, span);
         }
 
-        Statement::Break {
+        Ok(Statement::Break {
             span: span
-        }
+        })
     }
 
-    pub fn sema_continue_stmt(&mut self, span: Span) -> Statement {
+    pub fn sema_continue_stmt(&mut self, span: Span) -> Result<Statement, CodeError> {
         if self.loop_level == 0 {
-            self.diag_engine.report_sema_error("Continue outside a loop".to_string(), span);
+            return new_sema_error(SemaErrorKind::ContinueOutsideLoop, span);
         }
 
-        Statement::Continue {
+        Ok(Statement::Continue {
             span: span
-        }
+        })
     }
 
-    pub fn sema_return_stmt(&mut self, expr: Expression, span: Span) -> Statement {
-        let expr = self.l2r_if_needed(expr);
+    pub fn sema_return_stmt(&mut self, expr: Expression, span: Span) -> Result<Statement, CodeError> {
+        let expr = l2r_if_needed(expr);
         let expr_ty = expr.ty();
         if expr_ty != self.current_ret_ty {
-            self.diag_engine.report_sema_error(
-                format!(
-                    "Mismatching return type (expected: {}, given {})",
-                    self.current_ret_ty,
-                    expr_ty
+            return new_sema_error(
+                SemaErrorKind::ReturnMismatchingTypes(
+                    self.current_ret_ty.clone(), expr_ty
                 ),
                 span
-            );
+            )
         }
 
-        Statement::Return {
+        Ok(Statement::Return {
             expression: expr,
             span: span
-        }
+        })
     }
 
-    pub fn sema_identifier(&mut self, id: String, span: Span) -> Expression {
+    pub fn sema_identifier(&mut self, id: String, span: Span) -> Result<Expression, CodeError> {
         if let Some(ty) = self.symbol_table.get(&id) {
-            Expression::Identifier {
+            Ok(Expression::Identifier {
                 identifier: id,
                 span: span,
                 ty: Type::LVal(Box::new(ty.clone())),
-            }
+            })
         } else {
-            self.diag_engine.report_sema_error(format!("Undefined identifier {}", id), span)
+            new_sema_error(SemaErrorKind::UndefinedIdentifier(id), span)
         }
     }
 
@@ -266,8 +249,8 @@ impl<'a> Sema<'a> {
                               kind: AssignOpKind,
                               lhs: Expression,
                               rhs: Expression,
-                              span: Span) -> Expression {
-        let rhs = self.l2r_if_needed(rhs);
+                              span: Span) -> Result<Expression, CodeError> {
+        let rhs = l2r_if_needed(rhs);
         let rhs_ty = rhs.ty();
 
         let res_ty = if let Type::LVal(lhs_ty) = lhs.ty() {
@@ -275,68 +258,60 @@ impl<'a> Sema<'a> {
                 if let Some(res_ty) = get_binop_ty(binop_kind, &lhs_ty, &rhs_ty) {
                     res_ty
                 } else {
-                    self.diag_engine.report_sema_error(
-                        format!("{:?} is undefined between {} and {}", binop_kind, lhs_ty, rhs_ty),
+                    return new_sema_error(
+                        SemaErrorKind::BinOpUndefined(
+                            binop_kind,
+                            *lhs_ty,
+                            rhs_ty
+                        ),
                         span
                     )
                 }
             } else if *lhs_ty != rhs_ty {
-                self.diag_engine.report_sema_error(
-                    format!(
-                        "Mismatching types in assignment (expected: {}, given: {})",
-                        lhs_ty,
-                        rhs_ty
-                    ),
-                    span
-                )
+                return new_sema_error(SemaErrorKind::AssignMismatchingTypes(*lhs_ty, rhs_ty), span);
             } else {
                 *lhs_ty
             }
         } else {
-            self.diag_engine.report_sema_error(
-                "The left hand side of an assignement must be a reference".to_string(),
-                span,
-            )
+            return new_sema_error(SemaErrorKind::AssignLHSNotRef, span);
         };
 
-        Expression::AssignOp {
+        Ok(Expression::AssignOp {
             kind: kind,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
             span: span,
             ty: res_ty,
-        }
+        })
     }
 
     pub fn sema_binop_expr(&mut self,
                            kind: BinOpKind,
                            lhs: Expression,
                            rhs: Expression,
-                           span: Span) -> Expression {
-        let lhs = self.l2r_if_needed(lhs);
-        let rhs = self.l2r_if_needed(rhs);
+                           span: Span) -> Result<Expression, CodeError> {
+        let lhs = l2r_if_needed(lhs);
+        let rhs = l2r_if_needed(rhs);
 
         let lhs_ty = lhs.ty();
         let rhs_ty = rhs.ty();
 
         if let Some(ty) = get_binop_ty(kind, &lhs_ty, &rhs_ty) {
-            Expression::BinOp {
+            Ok(Expression::BinOp {
                 kind: kind,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
                 span: span,
                 ty: ty,
-            }
+            })
         } else {
-            self.diag_engine.report_sema_error(
-                format!("{:?} is undefined between {} and {}", kind, lhs_ty, rhs_ty),
-                span
-            )
+            new_sema_error(SemaErrorKind::BinOpUndefined(kind, lhs_ty, rhs_ty), span)
         }
     }
 
-    pub fn sema_unop_expr(&mut self, kind: UnOpKind, expr: Expression, span: Span) -> Expression {
-        let expr = self.l2r_if_needed(expr);
+    pub fn sema_unop_expr(&mut self, kind: UnOpKind, expr: Expression, span: Span)
+        -> Result<Expression, CodeError> {
+        let expr = l2r_if_needed(expr);
 
         let ty = match (kind, expr.ty()) {
             (UnOpKind::Plus, Type::Int) => Type::Int,
@@ -347,28 +322,24 @@ impl<'a> Sema<'a> {
             (UnOpKind::LogicalNot, Type::Bool) => Type::Bool,
             (UnOpKind::Deref, Type::Ptr(sub_ty)) => *sub_ty,
             (UnOpKind::AddressOf, ty) => Type::Ptr(Box::new(ty)),
-            (kind, et) => {
-                self.diag_engine.report_sema_error(
-                    format!("{:?} is undefined for {}", kind, et),
-                    span
-                )
-            }
+            (kind, et) => return new_sema_error(SemaErrorKind::UnOpUndefined(kind, et), span),
         };
 
-        Expression::UnOp {
+        Ok(Expression::UnOp {
             kind: kind,
             expression: Box::new(expr),
             ty: ty,
             span: span,
-        }
+        })
     }
 
-    pub fn sema_cast_expr(&mut self, expr: Expression, ty: Type, span: Span) -> Expression {
-        let expr = self.l2r_if_needed(expr);
+    pub fn sema_cast_expr(&mut self, expr: Expression, ty: Type, span: Span)
+        -> Result<Expression, CodeError> {
+        let expr = l2r_if_needed(expr);
         let expr_ty = expr.ty();
 
         if expr_ty == ty {
-            return expr;
+            return Ok(expr);
         }
 
         match (expr_ty, ty.clone()) {
@@ -384,99 +355,79 @@ impl<'a> Sema<'a> {
             (Type::Double, Type::UInt) |
             (Type::Double, Type::Bool) |
             (Type::Double, Type::Char) => {},
-            (src, target) => {
-                self.diag_engine.report_sema_error(
-                    format!("Cast between {} and {} is undefined", src, target),
-                    span,
-                )
-            }
+            (src, trgt) => return new_sema_error(SemaErrorKind::CastUndefined(src, trgt), span)
         }
 
-        Expression::Cast {
+        Ok(Expression::Cast {
             expression: Box::new(expr),
             ty: ty,
             span: span,
-        }
+        })
     }
 
     pub fn sema_func_call(&mut self,
                           func_name: String,
                           args: Vec<Expression>,
-                          span: Span) -> Expression {
+                          span: Span) -> Result<Expression, CodeError> {
         // TODO func_name must be from an expression
 
         let args: Vec<_> = args.into_iter().map(|param| {
-            self.l2r_if_needed(param)
+            l2r_if_needed(param)
         }).collect();
 
         if let Some(ty) = self.symbol_table.get(&func_name).cloned() {
             if let Type::Function(params, ret) = ty {
                 if params.len() != args.len() {
-                    self.diag_engine.report_sema_error(
-                        format!(
-                            "Mismatching number of arguments (expected: {}, given: {})",
-                            args.len(),
-                            params.len()
-                        ),
-                        span
-                    )
+                    return new_sema_error(
+                        SemaErrorKind::FuncCallMismatchingLen(args.len(), params.len()), span
+                    );
                 }
 
                 for (ref par, ref arg) in params.into_iter().zip(args.iter()) {
                     if *par != arg.ty() {
-                        self.diag_engine.report_sema_error(
-                            format!(
-                                "Mismatching type in argument (expected: {}, given: {})",
-                                par,
-                                arg.ty()
-                            ),
-                            arg.span()
-                        )
+                        return new_sema_error(
+                            SemaErrorKind::FuncCallMismatchingTypes(par.clone(), arg.ty()), span
+                        );
                     }
                 }
 
-                return Expression::FuncCall {
+                return Ok(Expression::FuncCall {
                     function_name: func_name,
                     arguments: args,
                     span: span,
                     ty: *ret,
-                };
+                });
             } else {
-                self.diag_engine.report_sema_error(
-                    format!("{} is not callable (given: {})", func_name, ty),
-                    span
-                )
+                return new_sema_error(SemaErrorKind::FuncCallNotCallable(func_name, ty), span);
             }
         } else {
-            self.diag_engine.report_sema_error(format!("{} is not defined", func_name), span)
+            return new_sema_error(SemaErrorKind::UndefinedIdentifier(func_name), span);
         }
     }
 
-    pub fn sema_id_type(&mut self, id: String, span: Span) -> Type {
+    pub fn sema_id_type(&mut self, id: String, span: Span) -> Result<Type, CodeError> {
         match &id[..] {
-            "int" => Type::Int,
-            "uint" => Type::UInt,
-            "bool" => Type::Bool,
-            "double" => Type::Double,
-            "char" => Type::Char,
-            other => {
-                self.diag_engine
-                    .report_sema_error(format!("\'{}\' isn't a type", other), span);
-            }
+            "int" => Ok(Type::Int),
+            "uint" => Ok(Type::UInt),
+            "bool" => Ok(Type::Bool),
+            "double" => Ok(Type::Double),
+            "char" => Ok(Type::Char),
+            other => new_sema_error(SemaErrorKind::TypeUndefined(other.to_string()), span)
         }
     }
+}
 
-    pub fn l2r_if_needed(&mut self, expr: Expression) -> Expression {
-        let expr_ty = expr.ty();
-        if let Type::LVal(sub_ty) = expr_ty {
-            Expression::L2R {
-                span: expr.span(),
-                expression: Box::new(expr),
-                ty: *sub_ty,
-            }
-        } else {
-            expr
+// utils
+fn l2r_if_needed(expr: Expression) -> Expression {
+    let expr_ty = expr.ty();
+    if let Type::LVal(sub_ty) = expr_ty {
+        Expression::L2R {
+            span: expr.span(),
+            expression: Box::new(expr),
+            ty: *sub_ty,
         }
+    } else {
+        expr
     }
 }
 
@@ -515,4 +466,8 @@ fn get_binop_ty(kind: BinOpKind, lhs_ty: &Type, rhs_ty: &Type) -> Option<Type> {
         (Domain::Logical, &Type::Bool, &Type::Bool) => Some(Type::Bool),
         _ => None
     }
+}
+
+fn new_sema_error<T>(kind: SemaErrorKind, span: Span) -> Result<T, CodeError> {
+    Err(CodeError::SemaError(SemaError(kind, span)))
 }

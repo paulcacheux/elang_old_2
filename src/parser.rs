@@ -1,24 +1,21 @@
 use double_peekable::DoublePeekable;
+use lexer::Lexer;
 use source::Span;
 use token::Token;
 use ast::{Program, Type, AssignOpKind, BinOpKind, UnOpKind, Function, Param, Block, Statement, Expression};
 use ast::sema::Sema;
+use error::{CodeError, ParseError};
 
-pub struct Parser<'a, L: IntoIterator<Item = (Span, Token)>> {
-    lexer: DoublePeekable<L::IntoIter>,
-    sema: Sema<'a>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParseError {
-    Unexpected(String, Option<Span>),
+pub struct Parser<'a> {
+    lexer: DoublePeekable<Lexer<'a>>,
+    sema: Sema,
 }
 
 macro_rules! expect { // we return the span for propagation
-    ($lexer:expr, $p:pat, $expected:tt) => {
-        match $lexer.next() {
+    ($lexer:expr, $p:pat, $expected:expr) => {
+        match unwrap_lex_error!($lexer.next()) {
             Some((span, $p)) => span,
-            other => return make_unexpected!($expected, other)
+            other => return make_unexpected!(other, $expected.to_string())
         }
     };
 }
@@ -27,7 +24,7 @@ macro_rules! match_peek_token {
     ($lexer:expr => $($p:pat)|+) => {
         {
             match $lexer.peek() {
-                $(Some(&(_, $p)) => true),+,
+                $(Some(&Ok((_, $p))) => true),+,
                 _ => false
             }
         }
@@ -35,23 +32,38 @@ macro_rules! match_peek_token {
     ($lexer:expr => $p1:pat, $p2:pat) => {
         {
             match $lexer.peek_double() {
-                Some((&(_, $p1), &(_, $p2))) => true,
+                Some((&Ok((_, $p1)), &Ok((_, $p2)))) => true,
                 _ => false
             }
         }
     };
 }
 
-macro_rules! make_unexpected {
-    ($expected:tt, $other:expr) => {
-        Err(ParseError::Unexpected($expected.to_string(), $other.map(|(span, _)| span)))
+macro_rules! unwrap_lex_error {
+    ($expr:expr) => {
+        match $expr {
+            Some(Err(err)) => return Err(err),
+            Some(Ok(val)) => Some(val),
+            None => None
+        }
     }
 }
 
-impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
-    pub fn new(lexer: L, sema: Sema<'a>) -> Parser<'a, L> {
+macro_rules! make_unexpected {
+    ($other:expr, $($expected:expr),+) => {
+        Err(CodeError::ParseError(
+            ParseError {
+                expected: vec![$($expected.to_string()),+],
+                span: $other.map(|(span, _)| span)
+            }
+        ))
+    }
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(lexer: Lexer<'a>, sema: Sema) -> Parser<'a> {
         let mut parser = Parser {
-            lexer: DoublePeekable::new(lexer.into_iter()),
+            lexer: DoublePeekable::new(lexer),
             sema: sema,
         };
         parser.sema.symbol_table.begin_scope();
@@ -59,7 +71,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         parser
     }
 
-    pub fn parse_program(&mut self) -> Result<Program, ParseError> {
+    pub fn parse_program(&mut self) -> Result<Program, CodeError> {
         // program = function_def*
 
         let mut funcs = Vec::new();
@@ -79,12 +91,12 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         })
     }
 
-    pub fn parse_type(&mut self) -> Result<Type, ParseError> {
+    pub fn parse_type(&mut self) -> Result<Type, CodeError> {
         // type = IDENTIFIER
         //      | '*' type
         //      | "()" # unit type
 
-        match self.lexer.next() {
+        match unwrap_lex_error!(self.lexer.next()) {
             Some((_, Token::TimesOp)) => {
                 let sub_ty = try!(self.parse_type());
                 Ok(Type::Ptr(Box::new(sub_ty)))
@@ -93,19 +105,19 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
                 expect!(self.lexer, Token::RParen, ")");
                 Ok(Type::Unit)
             }
-            Some((span, Token::Identifier(id))) => Ok(self.sema.sema_id_type(id, span)),
-            other => return make_unexpected!("identifier, &, (", other),
+            Some((span, Token::Identifier(id))) => self.sema.sema_id_type(id, span),
+            other => return make_unexpected!(other, "identifier", "&", "("),
         }
     }
 
-    pub fn parse_function_def(&mut self) -> Result<Function, ParseError> {
+    pub fn parse_function_def(&mut self) -> Result<Function, CodeError> {
         // function_def = "fn" IDENTIFIER '(' param_list ')' "->" type block
 
         let func_span = expect!(self.lexer, Token::FnKw, "fn");
 
-        let (name_span, func_name) = match self.lexer.next() {
+        let (name_span, func_name) = match unwrap_lex_error!(self.lexer.next()) {
             Some((span, Token::Identifier(func_name))) => (span, func_name),
-            other => return make_unexpected!("identifier", other),
+            other => return make_unexpected!(other, "identifier"),
         };
 
         expect!(self.lexer, Token::LParen, "(");
@@ -119,15 +131,15 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
             Type::Unit
         };
 
-        let func_info = self.sema.sema_function_def_begin(func_name, params, ret_ty, name_span);
+        let func_info = try!(self.sema.sema_function_def_begin(func_name, params, ret_ty, name_span));
 
         let block = try!(self.parse_block());
         let span = Span::merge(func_span, block.span);
 
-        Ok(self.sema.sema_function_def_end(func_info, block, span))
+        self.sema.sema_function_def_end(func_info, block, span)
     }
 
-    pub fn parse_param_list(&mut self) -> Result<Vec<Param>, ParseError> {
+    pub fn parse_param_list(&mut self) -> Result<Vec<Param>, CodeError> {
         // param_list = [ param { ',' param } ]
         let mut params = Vec::new();
 
@@ -142,11 +154,11 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         Ok(params)
     }
 
-    pub fn parse_param(&mut self) -> Result<Param, ParseError> {
+    pub fn parse_param(&mut self) -> Result<Param, CodeError> {
         // param = IDENTIFIER ':' type
-        let (span, name) = match self.lexer.next() {
+        let (span, name) = match unwrap_lex_error!(self.lexer.next()) {
             Some((span, Token::Identifier(name))) => (span, name),
-            other => return make_unexpected!("identifier", other),
+            other => return make_unexpected!(other, "identifier"),
         };
         expect!(self.lexer, Token::Colon, ":");
         let ty = try!(self.parse_type());
@@ -157,7 +169,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         })
     }
 
-    pub fn parse_block(&mut self) -> Result<Block, ParseError> {
+    pub fn parse_block(&mut self) -> Result<Block, CodeError> {
         // block = '{' statement* '}'
 
         let begin_span = expect!(self.lexer, Token::LBrace, "{");
@@ -177,7 +189,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         })
     }
 
-    pub fn parse_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_statement(&mut self) -> Result<Statement, CodeError> {
         // statement = print-statement
         //           | read-statement
         //           | if-statement
@@ -186,26 +198,26 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         //           | assign-statement
 
         match self.lexer.peek() {
-            Some(&(_, Token::LetKw)) => self.parse_let_statement(),
-            Some(&(_, Token::IfKw)) => self.parse_if_statement(),
-            Some(&(_, Token::LoopKw)) => self.parse_loop_statement(),
-            Some(&(_, Token::WhileKw)) => self.parse_while_statement(),
-            Some(&(_, Token::BreakKw)) => self.parse_break_statement(),
-            Some(&(_, Token::ContinueKw)) => self.parse_continue_statement(),
-            Some(&(_, Token::ReturnKw)) => self.parse_return_statement(),
-            Some(&(_, Token::LBrace)) => self.parse_block_statement(),
+            Some(&Ok((_, Token::LetKw))) => self.parse_let_statement(),
+            Some(&Ok((_, Token::IfKw))) => self.parse_if_statement(),
+            Some(&Ok((_, Token::LoopKw))) => self.parse_loop_statement(),
+            Some(&Ok((_, Token::WhileKw))) => self.parse_while_statement(),
+            Some(&Ok((_, Token::BreakKw))) => self.parse_break_statement(),
+            Some(&Ok((_, Token::ContinueKw))) => self.parse_continue_statement(),
+            Some(&Ok((_, Token::ReturnKw))) => self.parse_return_statement(),
+            Some(&Ok((_, Token::LBrace))) => self.parse_block_statement(),
             _ => self.parse_statement_expression(),
         }
     }
 
-    pub fn parse_let_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_let_statement(&mut self) -> Result<Statement, CodeError> {
         // let-statement = "let" IDENTIFIER "=" expression ";"
 
         let kw_span = expect!(self.lexer, Token::LetKw, "let");
 
-        let id = match self.lexer.next() {
+        let id = match unwrap_lex_error!(self.lexer.next()) {
             Some((_, Token::Identifier(id))) => id,
-            other => return make_unexpected!("identifier", other),
+            other => return make_unexpected!(other, "identifier"),
         };
 
         let ty = if match_peek_token!(self.lexer => Token::Colon) {
@@ -219,11 +231,10 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         let expr = try!(self.parse_expression());
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
 
-
-        Ok(self.sema.sema_let_stmt(id, ty, expr, Span::merge(kw_span, end_span)))
+        self.sema.sema_let_stmt(id, ty, expr, Span::merge(kw_span, end_span))
     }
 
-    pub fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_if_statement(&mut self) -> Result<Statement, CodeError> {
         // if-statement = "if" expression statement [ "else" statement ]
 
         let kw_span = expect!(self.lexer, Token::IfKw, "if");
@@ -254,13 +265,13 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
             if_stmt.span()
         };
 
-        Ok(self.sema.sema_if_stmt(condition,
+        self.sema.sema_if_stmt(condition,
                                   if_stmt,
                                   else_stmt,
-                                  Span::merge(kw_span, end_span)))
+                                  Span::merge(kw_span, end_span))
     }
 
-    pub fn parse_loop_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_loop_statement(&mut self) -> Result<Statement, CodeError> {
         // loop-statement = "loop" statement
 
         let kw_span = expect!(self.lexer, Token::LoopKw, "loop");
@@ -280,7 +291,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         })
     }
 
-    pub fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_while_statement(&mut self) -> Result<Statement, CodeError> {
         // while-statement = "while" expression statement
 
         let kw_span = expect!(self.lexer, Token::WhileKw, "while");
@@ -294,28 +305,28 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         self.sema.loop_level -= 1;
 
         let span = Span::merge(kw_span, stmt.span());
-        Ok(self.sema.sema_while_stmt(condition, stmt, span))
+        self.sema.sema_while_stmt(condition, stmt, span)
     }
 
-    pub fn parse_break_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_break_statement(&mut self) -> Result<Statement, CodeError> {
         // break-statement = "break" ";"
 
         let kw_span = expect!(self.lexer, Token::BreakKw, "break");
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
-        Ok(self.sema.sema_break_stmt(span))
+        self.sema.sema_break_stmt(span)
     }
 
-    pub fn parse_continue_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_continue_statement(&mut self) -> Result<Statement, CodeError> {
         // continue-statement = "continue" ";"
 
         let kw_span = expect!(self.lexer, Token::ContinueKw, "continue");
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
-        Ok(self.sema.sema_continue_stmt(span))
+        self.sema.sema_continue_stmt(span)
     }
 
-    pub fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_return_statement(&mut self) -> Result<Statement, CodeError> {
         // return-statement = "return" [ expression ] ";"
 
         let kw_span = expect!(self.lexer, Token::ReturnKw, "return");
@@ -328,10 +339,10 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(kw_span, end_span);
 
-        Ok(self.sema.sema_return_stmt(expr, span))
+        self.sema.sema_return_stmt(expr, span)
     }
 
-    pub fn parse_block_statement(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_block_statement(&mut self) -> Result<Statement, CodeError> {
         let block = try!(self.parse_block());
         Ok(Statement::Block {
             span: block.span,
@@ -339,7 +350,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         })
     }
 
-    pub fn parse_statement_expression(&mut self) -> Result<Statement, ParseError> {
+    pub fn parse_statement_expression(&mut self) -> Result<Statement, CodeError> {
         let expr = try!(self.parse_expression());
         let end_span = expect!(self.lexer, Token::SemiColon, ";");
         let span = Span::merge(expr.span(), end_span);
@@ -349,7 +360,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
         })
     }
 
-    pub fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_expression(&mut self) -> Result<Expression, CodeError> {
         // expression = logical_or [ assign-op expression ]
 
         let mut lhs = try!(self.parse_logical_or());
@@ -361,7 +372,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
             Token::AssignDivOp |
             Token::AssignModOp
         ) {
-            let assignop_kind = match self.lexer.next() {
+            let assignop_kind = match unwrap_lex_error!(self.lexer.next()) {
                 Some((_, Token::AssignOp)) => AssignOpKind::Normal,
                 Some((_, Token::AssignPlusOp)) => AssignOpKind::Add,
                 Some((_, Token::AssignMinusOp)) => AssignOpKind::Sub,
@@ -372,54 +383,54 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
             };
             let rhs = try!(self.parse_expression());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_assignop_expr(assignop_kind, lhs, rhs, span);
+            lhs = try!(self.sema.sema_assignop_expr(assignop_kind, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_logical_or(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_logical_or(&mut self) -> Result<Expression, CodeError> {
         // logical_or = logical_and { "||" logical_and }
         let mut lhs = try!(self.parse_logical_and());
         while self.lexer.peek().is_some() && match_peek_token!(self.lexer => Token::LogOrOp) {
             self.lexer.next();
             let rhs = try!(self.parse_logical_and());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_binop_expr(BinOpKind::LogicalOr, lhs, rhs, span);
+            lhs = try!(self.sema.sema_binop_expr(BinOpKind::LogicalOr, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_logical_and(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_logical_and(&mut self) -> Result<Expression, CodeError> {
         // logical_and = eq_comp { "&&" eq_comp }
         let mut lhs = try!(self.parse_eq_comp());
         while self.lexer.peek().is_some() && match_peek_token!(self.lexer => Token::LogAndOp) {
             self.lexer.next();
             let rhs = try!(self.parse_eq_comp());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_binop_expr(BinOpKind::LogicalAnd, lhs, rhs, span);
+            lhs = try!(self.sema.sema_binop_expr(BinOpKind::LogicalAnd, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_eq_comp(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_eq_comp(&mut self) -> Result<Expression, CodeError> {
         // eq_comp = ord_comp [ (==|!=) ord_comp ]
 
         let mut lhs = try!(self.parse_ord_comp());
         if self.lexer.peek().is_some() &&
            match_peek_token!(self.lexer => Token::EqualOp | Token::NotEqualOp) {
-            let binop_kind = match self.lexer.next() {
+            let binop_kind = match unwrap_lex_error!(self.lexer.next()) {
                 Some((_, Token::EqualOp)) => BinOpKind::Equal,
                 Some((_, Token::NotEqualOp)) => BinOpKind::NotEqual,
                 _ => unreachable!(),
             };
             let rhs = try!(self.parse_ord_comp());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
+            lhs = try!(self.sema.sema_binop_expr(binop_kind, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_ord_comp(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_ord_comp(&mut self) -> Result<Expression, CodeError> {
         // ord_comp = sum [ (<|<=|>|>=) sum ]
 
         let mut lhs = try!(self.parse_sum());
@@ -429,7 +440,7 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
                              Token::LessEqualOp |
                              Token::GreaterOp |
                              Token::GreaterEqualOp) {
-            let binop_kind = match self.lexer.next() {
+            let binop_kind = match unwrap_lex_error!(self.lexer.next()) {
                 Some((_, Token::LessOp)) => BinOpKind::Less,
                 Some((_, Token::LessEqualOp)) => BinOpKind::LessEq,
                 Some((_, Token::GreaterOp)) => BinOpKind::Greater,
@@ -438,18 +449,18 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
             };
             let rhs = try!(self.parse_sum());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
+            lhs = try!(self.sema.sema_binop_expr(binop_kind, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_sum(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_sum(&mut self) -> Result<Expression, CodeError> {
         // sum = factor { [+|-] factor }
 
         let mut lhs = try!(self.parse_factor());
         while self.lexer.peek().is_some() &&
               match_peek_token!(self.lexer => Token::PlusOp | Token::MinusOp) {
-            let binop_kind = match self.lexer.next() {
+            let binop_kind = match unwrap_lex_error!(self.lexer.next()) {
                 Some((_, Token::PlusOp)) => BinOpKind::Add,
                 Some((_, Token::MinusOp)) => BinOpKind::Sub,
                 _ => unreachable!(),
@@ -457,18 +468,18 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
 
             let rhs = try!(self.parse_factor());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
+            lhs = try!(self.sema.sema_binop_expr(binop_kind, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_factor(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_factor(&mut self) -> Result<Expression, CodeError> {
         // factor = cast { [*|/|%] cast }
 
         let mut lhs = try!(self.parse_cast());
         while self.lexer.peek().is_some() &&
               match_peek_token!(self.lexer => Token::TimesOp | Token::DivOp | Token::ModOp) {
-            let binop_kind = match self.lexer.next() {
+            let binop_kind = match unwrap_lex_error!(self.lexer.next()) {
                 Some((_, Token::TimesOp)) => BinOpKind::Mul,
                 Some((_, Token::DivOp)) => BinOpKind::Div,
                 Some((_, Token::ModOp)) => BinOpKind::Mod,
@@ -477,12 +488,12 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
 
             let rhs = try!(self.parse_cast());
             let span = Span::merge(lhs.span(), rhs.span());
-            lhs = self.sema.sema_binop_expr(binop_kind, lhs, rhs, span);
+            lhs = try!(self.sema.sema_binop_expr(binop_kind, lhs, rhs, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_cast(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_cast(&mut self) -> Result<Expression, CodeError> {
         // cast = term [ "as" type ]
 
         let mut lhs = try!(self.parse_term());
@@ -491,18 +502,18 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
             let ty = try!(self.parse_type());
 
             let span = Span::merge(lhs.span(), as_span);
-            lhs = self.sema.sema_cast_expr(lhs, ty, span);
+            lhs = try!(self.sema.sema_cast_expr(lhs, ty, span));
         }
         Ok(lhs)
     }
 
-    pub fn parse_term(&mut self) -> Result<Expression, ParseError> {
+    pub fn parse_term(&mut self) -> Result<Expression, CodeError> {
         // term = IDENTIFIER
         //      | NUMBER
         //      | [+|-] term
         //      | '(' expression ')'
 
-        let term = match self.lexer.next() {
+        match unwrap_lex_error!(self.lexer.next()) {
             Some((span, Token::Identifier(id))) => {
                 if match_peek_token!(self.lexer => Token::LParen) {
                     self.lexer.next();
@@ -523,44 +534,44 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
                 }
             }
             Some((span, Token::IntLit(value))) => {
-                Expression::IntLit {
+                Ok(Expression::IntLit {
                     value: value,
                     span: span,
-                }
+                })
             }
             Some((span, Token::UIntLit(value))) => {
-                Expression::UIntLit {
+                Ok(Expression::UIntLit {
                     value: value,
                     span: span,
-                }
+                })
             }
             Some((span, Token::DoubleLit(value))) => {
-                Expression::DoubleLit {
+                Ok(Expression::DoubleLit {
                     value: value,
                     span: span,
-                }
+                })
             }
             Some((span, Token::CharLit(value))) => {
-                Expression::CharLit {
+                Ok(Expression::CharLit {
                     value: value,
                     span: span,
-                }
+                })
             }
             Some((span, Token::BoolLit(value))) => {
-                Expression::BoolLit {
+                Ok(Expression::BoolLit {
                     value: value,
                     span: span,
-                }
+                })
             }
             Some((span, Token::LParen)) => {
                 let expr = try!(self.parse_expression());
                 let expr_ty = expr.ty();
                 let end_span = expect!(self.lexer, Token::RParen, ")");
-                Expression::Paren {
+                Ok(Expression::Paren {
                     expression: Box::new(expr),
                     span: Span::merge(span, end_span),
                     ty: expr_ty,
-                }
+                })
             }
             Some((span, Token::LogNotOp)) => {
                 let expr = try!(self.parse_term());
@@ -587,8 +598,11 @@ impl<'a, L: IntoIterator<Item = (Span, Token)>> Parser<'a, L> {
                 let span = Span::merge(span, expr.span());
                 self.sema.sema_unop_expr(UnOpKind::Deref, expr, span)
             }
-            other => return make_unexpected!("identifier, literal, (, +, -, *, &", other),
-        };
-        Ok(term)
+            other => {
+                make_unexpected!(
+                    other, "identifier", "literal", "(", "+", "-", "*", "&"
+                )
+            }
+        }
     }
 }

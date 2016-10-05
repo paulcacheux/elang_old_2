@@ -11,6 +11,7 @@ mod lexer;
 mod ast;
 mod parser;
 mod diagnostic;
+mod error;
 
 use source::Manager;
 use lexer::Lexer;
@@ -53,13 +54,13 @@ fn main() {
     let source_reader = source_manager.reader();
     let diagnostic_engine = diagnostic::DiagnosticEngine::new(&source_manager.source, args.flag_W);
 
-    let lexer = Lexer::new(source_reader, &diagnostic_engine);
-    let sema = Sema::new(&diagnostic_engine);
+    let lexer = Lexer::new(source_reader);
+    let sema = Sema::new();
     let mut parser = Parser::new(lexer, sema);
 
     let program = match parser.parse_program() {
         Ok(program) => program,
-        Err(parser_error) => diagnostic_engine.report_parse_error(parser_error),
+        Err(code_error) => diagnostic_engine.report_error(code_error),
     };
 
     let emit_type = args.flag_emit.unwrap_or(EmitType::C);

@@ -3,7 +3,7 @@ use std::fmt;
 use std::io::Write;
 
 use source::Span;
-use parser::ParseError;
+use error::*;
 
 macro_rules! println_stderr(
     ($($arg:tt)*) => { {
@@ -34,12 +34,11 @@ impl<'a> DiagnosticEngine<'a> {
     }
 
     pub fn report_parse_error(&self, error: ParseError) -> ! {
-        let (description, span) = match error {
-            ParseError::Unexpected(desc, span) => {
-                let end_span = Span::new_with_len(self.source.len() - 1, 1);
-                (format!("Expected: {}", desc), span.unwrap_or(end_span))
-            }
+        let span = {
+            let end_span = Span::new_with_len(self.source.len() - 1, 1);
+            error.span.unwrap_or(end_span)
         };
+        let description = format!("{:?}", error);
 
         let error = RenderError::from_span(span, description, self.source);
 
@@ -51,6 +50,11 @@ impl<'a> DiagnosticEngine<'a> {
         let error = RenderError::from_span(span, description, self.source);
 
         println_stderr!("{}", error);
+        process::exit(-1);
+    }
+
+    pub fn report_error(&self, error: CodeError) -> ! {
+        println_stderr!("{:?}", error);
         process::exit(-1);
     }
 }

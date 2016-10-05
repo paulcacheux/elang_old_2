@@ -15,6 +15,10 @@ impl Span {
         Span { begin: b, end: e }
     }
 
+    pub fn new_one(b: usize) -> Span {
+        Self::new_with_len(b, 1)
+    }
+
     pub fn new_with_len(b: usize, len: usize) -> Span {
         Self::new(b, b + len)
     }
@@ -63,26 +67,6 @@ impl<'a> Iterator for Reader<'a> {
     type Item = (usize, char);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.iter.as_str().starts_with("//") {
-            loop {
-                match self.iter.next() {
-                    Some((_, '\n')) => break,
-                    None => break,
-                    _ => continue,
-                }
-            }
-            self.next()
-        } else if self.iter.as_str().starts_with("/*") {
-            self.iter.next();
-            let target = |s: &str| s.len() != 0 && !s.starts_with("*/");
-            while target(self.iter.as_str()) {
-                self.iter.next();
-            }
-            self.iter.next();
-            self.iter.next();
-            self.next()
-        } else {
-            self.iter.next()
-        }
+        self.iter.next()
     }
 }
