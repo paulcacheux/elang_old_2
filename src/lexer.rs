@@ -282,7 +282,7 @@ impl<'a> Iterator for Lexer<'a> {
                 '}' => Ok((Span::new_one(bytepos), Token::RBrace)),
                 ':' => Ok((Span::new_one(bytepos), Token::Colon)),
                 ';' => Ok((Span::new_one(bytepos), Token::SemiColon)),
-                c => new_lex_error(LexErrorKind::Expected(c), bytepos),
+                c => new_lex_error(LexErrorKind::Unexpected(c), bytepos),
             })
         } else {
             None

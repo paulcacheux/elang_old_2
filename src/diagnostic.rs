@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use std::process;
 use std::fmt;
 use std::io::Write;
@@ -25,36 +27,26 @@ impl<'a> DiagnosticEngine<'a> {
         }
     }
 
-    pub fn report_lex_error(&self, description: String, bytepos: usize) -> ! {
-        let span = Span::new_with_len(bytepos, 1);
-        let error = RenderError::from_span(span, description, self.source);
-
-        println_stderr!("{}", error);
-        process::exit(-1);
-    }
-
-    pub fn report_parse_error(&self, error: ParseError) -> ! {
-        let span = {
-            let end_span = Span::new_with_len(self.source.len() - 1, 1);
-            error.span.unwrap_or(end_span)
-        };
-        let description = format!("{:?}", error);
-
-        let error = RenderError::from_span(span, description, self.source);
-
-        println_stderr!("{}", error);
-        process::exit(-1);
-    }
-
-    pub fn report_sema_error(&self, description: String, span: Span) -> ! {
-        let error = RenderError::from_span(span, description, self.source);
-
-        println_stderr!("{}", error);
-        process::exit(-1);
-    }
-
     pub fn report_error(&self, error: CodeError) -> ! {
-        println_stderr!("{:?}", error);
+        let (span, description) = match error {
+            CodeError::LexError(error) => {
+                (Span::new_one(error.1), error.0.to_string())
+            },
+            CodeError::ParseError(error) => {
+                let span = {
+                    let end_span = Span::new_with_len(self.source.len() - 1, 1);
+                    error.span.unwrap_or(end_span)
+                };
+                let description =
+                    format!("Expected one of [{}]", error.expected.into_iter().join(", "));
+                (span, description)
+            },
+            CodeError::SemaError(error) => {
+                (error.1, error.0.to_string())
+            },
+        };
+        let error = RenderError::from_span(span, description, self.source);
+        println_stderr!("{}", error);
         process::exit(-1);
     }
 }

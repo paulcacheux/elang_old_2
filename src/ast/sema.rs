@@ -142,7 +142,7 @@ impl Sema {
         let ty = ty.unwrap_or(expr_ty.clone());
 
         if ty != expr_ty {
-            return new_sema_error(SemaErrorKind::LetMismatchingTypes(ty, expr_ty), span);
+            return new_sema_error(SemaErrorKind::MismatchedTypes(ty, expr_ty), span);
         }
 
         if let Some(_) = self.symbol_table.insert(id.clone(), ty.clone()) {
@@ -166,7 +166,7 @@ impl Sema {
         let condition = l2r_if_needed(condition);
         let cond_ty = condition.ty();
         if cond_ty != Type::Bool {
-            return new_sema_error(SemaErrorKind::IfConditionNotBool(cond_ty), span);
+            return new_sema_error(SemaErrorKind::MismatchedTypes(Type::Bool, cond_ty), span);
         }
 
         Ok(Statement::If {
@@ -185,7 +185,7 @@ impl Sema {
         let condition = l2r_if_needed(condition);
         let cond_ty = condition.ty();
         if cond_ty != Type::Bool {
-            return new_sema_error(SemaErrorKind::WhileConditionNotBool(cond_ty), span);
+            return new_sema_error(SemaErrorKind::MismatchedTypes(Type::Bool, cond_ty), span);
         }
 
         Ok(Statement::While {
@@ -220,7 +220,7 @@ impl Sema {
         let expr_ty = expr.ty();
         if expr_ty != self.current_ret_ty {
             return new_sema_error(
-                SemaErrorKind::ReturnMismatchingTypes(
+                SemaErrorKind::MismatchedTypes(
                     self.current_ret_ty.clone(), expr_ty
                 ),
                 span
@@ -268,7 +268,7 @@ impl Sema {
                     )
                 }
             } else if *lhs_ty != rhs_ty {
-                return new_sema_error(SemaErrorKind::AssignMismatchingTypes(*lhs_ty, rhs_ty), span);
+                return new_sema_error(SemaErrorKind::MismatchedTypes(*lhs_ty, rhs_ty), span);
             } else {
                 *lhs_ty
             }
@@ -386,7 +386,7 @@ impl Sema {
                 for (ref par, ref arg) in params.into_iter().zip(args.iter()) {
                     if *par != arg.ty() {
                         return new_sema_error(
-                            SemaErrorKind::FuncCallMismatchingTypes(par.clone(), arg.ty()), span
+                            SemaErrorKind::MismatchedTypes(par.clone(), arg.ty()), span
                         );
                     }
                 }
