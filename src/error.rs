@@ -86,7 +86,7 @@ impl fmt::Display for SemaErrorKind {
             BinOpUndefined(ref kind, ref lhs_ty, ref rhs_ty) => {
                 write!(
                     f,
-                    "\'{:?}\' is not defined between \'{}\' and \'{}\'.",
+                    "\'{}\' is not defined between \'{}\' and \'{}\'.",
                     kind,
                     lhs_ty,
                     rhs_ty
@@ -95,7 +95,7 @@ impl fmt::Display for SemaErrorKind {
             UnOpUndefined(ref kind, ref expr_ty) => {
                 write!(
                     f,
-                    "'\'{:?}\' is not defined for \'{}\'.",
+                    "'\'{}\' is not defined for \'{}\'.",
                     kind,
                     expr_ty
                 )

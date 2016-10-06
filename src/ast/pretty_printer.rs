@@ -1,6 +1,5 @@
 use std::iter;
-use ast::{Program, Type, Function, Param, Block, Statement, Expression, AssignOpKind, BinOpKind,
-          UnOpKind};
+use ast::{Program, Type, Function, Param, Block, Statement, Expression};
 
 pub fn print(program: &Program) -> String {
     let mut pp = PrettyPrinter {
@@ -150,43 +149,20 @@ impl PrettyPrinter {
         match *expression {
             Expression::AssignOp { kind, ref lhs, ref rhs, .. } => {
                 self.print_expression(lhs);
-                self.output.push_str(match kind {
-                    AssignOpKind::Normal => " = ",
-                    AssignOpKind::Add => " += ",
-                    AssignOpKind::Sub => " -= ",
-                    AssignOpKind::Mul => " *= ",
-                    AssignOpKind::Div => " /= ",
-                    AssignOpKind::Mod => " %= ",
-                });
+                self.output.push(' ');
+                self.output.push_str(&kind.to_string());
+                self.output.push(' ');
                 self.print_expression(rhs);
             }
             Expression::BinOp { kind, ref lhs, ref rhs, .. } => {
                 self.print_expression(lhs);
-                self.output.push_str(match kind {
-                    BinOpKind::Add => " + ",
-                    BinOpKind::Sub => " - ",
-                    BinOpKind::Mul => " * ",
-                    BinOpKind::Div => " / ",
-                    BinOpKind::Mod => " % ",
-                    BinOpKind::Less => " < ",
-                    BinOpKind::LessEq => " <= ",
-                    BinOpKind::Greater => " > ",
-                    BinOpKind::GreaterEq => " >= ",
-                    BinOpKind::Equal => " == ",
-                    BinOpKind::NotEqual => " != ",
-                    BinOpKind::LogicalAnd => " && ",
-                    BinOpKind::LogicalOr => " || ",
-                });
+                self.output.push(' ');
+                self.output.push_str(&kind.to_string());
+                self.output.push(' ');
                 self.print_expression(rhs);
             }
             Expression::UnOp { kind, ref expression, .. } => {
-                self.output.push_str(match kind {
-                    UnOpKind::Plus => "+",
-                    UnOpKind::Minus => "-",
-                    UnOpKind::LogicalNot => "!",
-                    UnOpKind::Deref => "*",
-                    UnOpKind::AddressOf => "&",
-                });
+                self.output.push_str(&kind.to_string());
                 self.print_expression(expression);
             }
             Expression::Paren { ref expression, .. } => {

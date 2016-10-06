@@ -92,6 +92,19 @@ pub enum AssignOpKind {
     Mod,
 }
 
+impl fmt::Display for AssignOpKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match *self {
+            AssignOpKind::Normal => "=",
+            AssignOpKind::Add => "+=",
+            AssignOpKind::Sub => "-=",
+            AssignOpKind::Mul => "*=",
+            AssignOpKind::Div => "/=",
+            AssignOpKind::Mod => "%=",
+        })
+    }
+}
+
 impl AssignOpKind {
     pub fn to_binop(self) -> Option<BinOpKind> {
         match self {
@@ -122,6 +135,26 @@ pub enum BinOpKind {
     LogicalOr,
 }
 
+impl fmt::Display for BinOpKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match *self {
+            BinOpKind::Add => "+",
+            BinOpKind::Sub => "-",
+            BinOpKind::Mul => "*",
+            BinOpKind::Div => "/",
+            BinOpKind::Mod => "%",
+            BinOpKind::Less => "<",
+            BinOpKind::LessEq => "<=",
+            BinOpKind::Greater => ">",
+            BinOpKind::GreaterEq => ">=",
+            BinOpKind::Equal => "==",
+            BinOpKind::NotEqual => "!=",
+            BinOpKind::LogicalAnd => "&&",
+            BinOpKind::LogicalOr => "||",
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOpKind {
     Plus,
@@ -129,6 +162,18 @@ pub enum UnOpKind {
     LogicalNot,
     Deref,
     AddressOf,
+}
+
+impl fmt::Display for UnOpKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match *self {
+            UnOpKind::Plus => "+",
+            UnOpKind::Minus => "-",
+            UnOpKind::LogicalNot => "!",
+            UnOpKind::Deref => "*",
+            UnOpKind::AddressOf => "&",
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
